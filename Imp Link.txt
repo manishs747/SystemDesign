@@ -1,0 +1,2 @@
+1	https://medium.com/javarevisited/top-30-system-design-interview-questions-and-problems-for-programmers-417e89eadd67
+2	https://www.geeksforgeeks.org/top-10-system-design-interview-questions-and-answers/?ref=lbp
