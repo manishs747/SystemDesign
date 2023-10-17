@@ -2,8 +2,7 @@
 2	Twitter	 
 3	WhatsApp/messenger	 
 4	YouTube	 
-5
- 	Uber/Nearby Friend/yelp	 
+5	Uber/Nearby Friend/yelp	 
 6	Dropbox	 
 7	Design Dropbox/Google Drive/Google Photos (A Global File Storage and Sharing Service)	 
 8	Ticketmaster(movie ticket booking system)	 
