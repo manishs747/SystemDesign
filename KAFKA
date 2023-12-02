@@ -1,0 +1,8 @@
+
+
+
+Kafka is a distributed publish-subscribe messaging system
+
+Brokers
+A broker refers to a server in the Kafka storage layer that stores event streams from one or more sources. 
+A Kafka cluster is typically comprised of several brokers. Every broker in a cluster is also a bootstrap server, meaning if you can connect to one broker in a cluster, you can connect to every broker.
