@@ -14,6 +14,9 @@ Color Picker
     * Latency (Active active DB, replication, DNS)
 
 
+https://chatgpt.com/s/t_68ae6f8d35988191964c3d3263c1c18a
+
+
 # Color Picker — Staff-level System Design (Atlassian-style)
 
 A web app where users can pick their favorite color and save/share it. We’ll design for correctness first, then evolve to enterprise-grade: privacy, compliance, observability, and internet-scale.
