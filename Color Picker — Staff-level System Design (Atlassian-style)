@@ -1,0 +1,366 @@
+
+Solve below System Design problem in Detail for Staff Engineer for atlassian :
+Color Picker
+*Design a web application that allows you to pick your favorite color and save it.
+
+    * Data Model and API design
+    * Show how Front end and backend talk to each other (REST, SOAP, gRPC, etc.)
+    * Why did you choose technology X
+    * How does your decision to do Y meet the scoping requirements?
+    * Talk through and go deeper into the proposed Architecture
+    * Design the solution that can accommodate future features (ex: PII, GDPR)
+    * Share the colour with other user
+    * Scale this to millions of user (Talking about caching techniques (CDN, redis, Akamai, Cloudflare)
+    * Latency (Active active DB, replication, DNS)
+
+
+# Color Picker — Staff-level System Design (Atlassian-style)
+
+A web app where users can pick their favorite color and save/share it. We’ll design for correctness first, then evolve to enterprise-grade: privacy, compliance, observability, and internet-scale.
+
+---
+
+## Scope & Core User Journeys
+
+1. **Authenticate** (Atlassian account/OAuth).
+2. **Pick & save a color** (hex/RGB/HSL + metadata).
+3. **View/update/delete** favorite color(s).
+4. **Share** a color via link or with specific users.
+5. **List colors shared with me**.
+6. **Future-proofing**: PII minimization, GDPR (DSAR/RTBF), audit trails, multi-tenant.
+
+---
+
+## Data Model
+
+### Entities (normalized, minimal PII)
+
+* **User**
+  `id (UUID)`, `external_id` (Atlassian account ID), `email_hash` (optional; salted, for lookup), `created_at`, `deleted_at (null when active)`
+* **Color**
+  `id (UUID)`, `owner_user_id (FK)`, `hex (#RRGGBB)`, `rgb (r,g,b)`, `hsl (h,s,l)`, `name (optional)`, `is_default (bool)`, `created_at`, `updated_at`, `deleted_at`
+* **Share**
+  `id (UUID)`, `color_id (FK)`, `shared_by_user_id`,
+  `share_type` ENUM(`LINK`,`DIRECT_USER`),
+  `target_user_id (nullable for LINK)`, `share_token (for LINK)`, `expires_at (nullable)`, `created_at`, `revoked_at`
+* **AuditEvent** (immutable, WORM storage)
+  `id`, `actor_user_id`, `verb` (`CREATE_COLOR`, `UPDATE_COLOR`, `DELETE_COLOR`, `SHARE_COLOR`, …), `resource_type`, `resource_id`, `timestamp`, `ip`, `ua`, `metadata (JSONB)`
+
+> **Indexes**:
+>
+> * `Color(owner_user_id, is_default)`
+> * `Share(color_id)`, `Share(share_token)`, `Share(target_user_id)`
+> * TTL/index on `Share(expires_at)` for cleanup.
+
+**Why store multiple color formats?**
+Avoids loss from conversions and reduces CPU on read. Validations at write ensure consistency.
+
+---
+
+## API Design (Versioned REST + optional gRPC internal)
+
+**External REST (JSON, OAuth2/JWT, idempotent where applicable)**
+
+* `POST /v1/colors` – Create color
+  **Req**: `{ hex, name? }` (server derives rgb/hsl)
+  **Resp**: `201 { color }`
+* `GET /v1/colors` – List my colors (paginated)
+  Filters: `is_default`, `q=name`
+* `GET /v1/colors/{id}` – Get my color
+* `PATCH /v1/colors/{id}` – Update color (name, default flag)
+* `DELETE /v1/colors/{id}` – Soft delete
+* `POST /v1/colors/{id}/share` – Create share
+  **Req**: `{ type: "LINK"|"DIRECT_USER", targetUserId?, expiresAt? }`
+  **Resp**: `{ shareId, link? }`
+* `GET /v1/shares` – My issued shares / shares with me
+* `POST /v1/shares/{id}:revoke` – Revoke share
+* `GET /v1/share-links/{token}` – Resolve link to color (no auth or limited scope token)
+* `GET /v1/profile` – Minimal user info for UI (non-PII wherever possible)
+
+**Error model**: RFC 7807 (`application/problem+json`).
+**Idempotency**: `Idempotency-Key` header for POSTs (create color/share).
+
+**Internal gRPC** (service-to-service: ColorService, ShareService, AuditService). gRPC for typed contracts & perf; REST for public compatibility.
+
+---
+
+## Frontend ↔ Backend Communication
+
+* **Transport**: HTTPS REST (public), HTTP/2 gRPC (internal).
+* **Auth**: Atlassian OAuth 2.0 / OpenID Connect; FE stores short-lived access token; backend validates with JWKS.
+* **Caching**:
+
+  * `/v1/colors` & `/v1/colors/{id}`: `ETag` + `If-None-Match`.
+  * Share links: `Cache-Control: private, max-age=60` (short), plus CDN caching of static assets.
+* **Real-time (optional)**: WebSocket/SSE for collaborative palettes later; not needed for MVP.
+
+---
+
+## Technology Choices & Rationale
+
+* **Frontend**: React + TypeScript, Vite build, Tailwind for styling.
+  *Why*: Productivity, type-safety, a11y controls, rich ecosystem.
+* **API Gateway**: NGINX/Envoy, rate limiting, request auth, canary/RBAC.
+* **Backend**: Kotlin or TypeScript (Node/NestJS) microservice(s) with Hexagonal architecture.
+  *Why*: Strong typing, structured concurrency (Kotlin), or ubiquitous JS talent (Node).
+* **Data Store**: Postgres (primary) + Redis (cache).
+  *Why*: Strong consistency for user data; Redis for hot reads and share token lookups.
+* **Object Storage**: S3/GCS for static front-end & logs; WORM bucket for audit.
+* **Message Bus**: Kafka (or SNS/SQS/PubSub) for audit/eventing and async fan-out.
+* **Infra**: Kubernetes (GKE/EKS), Helm, GitOps (ArgoCD), IaC (Terraform).
+* **Observability**: OpenTelemetry, Prometheus, Grafana, Loki, Tempo.
+* **CDN**: Cloudflare/Akamai for static assets + edge caching of share pages.
+* **Secrets**: KMS/HashiCorp Vault.
+* **CI/CD**: Buildkite/GitHub Actions; canary releases and feature flags (LaunchDarkly).
+
+---
+
+## Architecture (Deep Dive)
+
+### Service boundaries
+
+* **Gateway** → **AuthN/Z** → **Color API** → **Postgres**
+* **Share API** (separate module or service) for link issuance/lookups.
+* **Audit** (write-only) consumes Kafka events from both APIs.
+
+### Write path (Create Color)
+
+1. FE validates color locally; calls `POST /v1/colors`.
+2. API validates token, normalizes color formats, writes to Postgres (txn).
+3. Invalidates Redis cache keys: `user:{uid}:colors`, `color:{id}`.
+4. Emits `ColorCreated` event → Kafka → Audit indexer persists WORM record.
+
+### Read path (List Colors)
+
+1. FE calls `GET /v1/colors` with `If-None-Match`.
+2. Gateway checks Redis for `user:{uid}:colors:v1`. On miss, DB query with projection.
+3. Serialize, set `ETag`, cache in Redis with TTL (e.g., 15–60s).
+
+### Share link resolution
+
+* `GET /v1/share-links/{token}`
+
+  1. Gateway → Share API.
+  2. Redis lookup `share:{token}` → if miss, DB fetch & hydrate → set cache with TTL and <= `expires_at`.
+  3. Apply ABAC: if `DIRECT_USER`, require auth and `sub == target_user_id`. If `LINK`, no auth but token is unguessable (128-bit).
+  4. Return color DTO with owner-identifying fields removed.
+
+---
+
+## Meeting the Scoping Requirements
+
+* **Pick & Save favorite color**: CRUD endpoints, validations, single-click “set default”.
+* **Share with other user**: Share model supports **link-based** (token) and **direct user** (explicit) sharing.
+* **Frontend/Backend**: REST externally (browser-friendly), gRPC internally (performance & contracts).
+* **Tech choices**: Postgres for consistency and transactional semantics; Redis+CDN for performance; Kubernetes for portability/reliability.
+* **Future features (PII/GDPR)**:
+
+  * Store minimal PII; use `external_id` as primary reference; hash email if needed.
+  * **DSAR (Data Subject Access Request)**: Export all rows by `user_id`.
+  * **RTBF (Right to be Forgotten)**: Soft delete user + cryptographic erasure of identifiers; re-key share tokens owned by deleted user; purge caches; tombstone in audit (retain event but pseudonymize actor).
+  * **Data retention**: TTL for expired shares; lifecycle policies for logs.
+  * **Consent & purpose limitation**: tags on audit events and data processing registry.
+* **Scalability**:
+
+  * Read-heavy endpoints backed by Redis and CDN; DB read replicas for analytics.
+  * Horizontal autoscale on CPU/RPS; burst capacity at edge via CDN cache for share pages.
+  * Shard by user\_id if needed (later) or use Citus/pg\_partman for partitioning `AuditEvent`.
+* **Latency**:
+
+  * Multi-region active-active for stateless services behind **Geo-DNS** (Anycast).
+  * **Database**:
+
+    * Primary per region, **multi-master via CRDT** not needed; choose **active/passive per user region** to keep consistency simple.
+    * Or **Spanner/CockroachDB** for global low-latency writes (cost/complexity tradeoff).
+  * **Replication**: Read replicas in each region; follower reads for GETs.
+  * **DNS**: Cloudflare/Akamai for edge routing; low TTL for failover.
+
+---
+
+## Security & Privacy
+
+* **Auth**: OAuth 2.0/OIDC; short-lived access tokens; refresh tokens HTTP-only cookies.
+* **AuthZ**: ABAC: `subject` (user) can access `color.owner == subject`, plus share policies.
+* **Transport security**: TLS 1.3 end-to-end; mTLS between services.
+* **Input validation**: strict hex regex; clamp RGB/HSL; reject invalid names; size limits.
+* **Share tokens**: 128-bit random, base64url; optional `expires_at` default 7 days.
+* **Rate limiting**: per user/IP; stricter on share resolution to prevent abuse.
+* **Secrets**: rotated via Vault/KMS; DB creds short-lived (IAM auth if cloud managed).
+* **Audit**: append-only, immutable; PII minimized (no raw emails in logs).
+
+---
+
+## Caching Strategy
+
+* **CDN**:
+
+  * Static assets (JS/CSS/images) with immutable hashes (`Cache-Control: public, max-age=31536000, immutable`).
+  * Share landing pages can be **edge-rendered** (Cloudflare Workers/Pages) with token validation hitting Share API via edge KV/Cache for sub-50ms TTFB.
+* **Redis**:
+
+  * `user:{uid}:colors:v1` (JSON, 60s).
+  * `color:{id}` (JSON, 60s).
+  * `share:{token}` (JSON, TTL= min(60s, expires\_at-now)).
+* **Client**: ETag/Last-Modified, SW prefetch for user’s default color.
+
+---
+
+## Failure Modes & Resiliency
+
+* **DB outage**: Returns `503`; circuit breakers; fall back to cache for reads (stale-while-revalidate), disable writes temporarily with user messaging.
+* **Redis outage**: Bypass cache; degrade gracefully.
+* **Region failure**: Geo-DNS failover to healthy region; warm caches; read replicas spin up; async replication catches up.
+* **Poison messages** (audit): DLQ with backoff; replay tooling.
+
+---
+
+## Observability & Ops
+
+* **Metrics**: RPS, p95/p99 latency per route, cache hit ratio, token resolution latency, DB QPS.
+* **Logs**: Correlated with trace IDs; PII scrubber.
+* **Tracing**: End-to-end via OpenTelemetry (FE → BE → DB).
+* **SLOs**:
+
+  * Availability 99.95% /month.
+  * p95 read < 120ms (cached), p95 write < 250ms (same-region).
+* **Alerts**: Error budgets, elevated 4xx/5xx, cache miss spikes, replication lag.
+
+---
+
+## Frontend Design Notes
+
+* **Color input**: native `<input type="color">` + advanced picker (HSB wheel).
+* **A11y**: WCAG AA: contrast checker, keyboard navigation, ARIA roles.
+* **Offline**: Local cache of last chosen color (IndexedDB) with “sync later”.
+
+---
+
+## Example API Contracts
+
+### Create Color
+
+**Request**
+
+```http
+POST /v1/colors
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "hex": "#3366FF", "name": "Cornflower-ish" }
+```
+
+**Response**
+
+```json
+{
+  "id": "c_9b7c...",
+  "hex": "#3366FF",
+  "rgb": {"r":51,"g":102,"b":255},
+  "hsl": {"h":225,"s":100,"l":60},
+  "name": "Cornflower-ish",
+  "isDefault": false,
+  "createdAt": "2025-08-27T10:00:00Z",
+  "updatedAt": "2025-08-27T10:00:00Z"
+}
+```
+
+### Create Share (Link)
+
+```http
+POST /v1/colors/{id}/share
+{ "type": "LINK", "expiresAt": "2025-09-10T00:00:00Z" }
+```
+
+**Response**
+
+```json
+{
+  "shareId": "s_abc123",
+  "link": "https://color.example.com/s/eyJ0b2tlbiI6Ik1f..."} 
+```
+
+### Resolve Share
+
+```http
+GET /v1/share-links/{token}
+```
+
+**Response (public-safe)**
+
+```json
+{
+  "hex": "#3366FF",
+  "rgb": {"r":51,"g":102,"b":255},
+  "hsl": {"h":225,"s":100,"l":60},
+  "name": "Cornflower-ish",
+  "owner": null
+}
+```
+
+---
+
+## Capacity & Scaling Thought Exercise
+
+* Assume 10M MAU, 1.5 reads per user/day, 0.2 writes per user/day.
+
+  * **Reads**: 15M/day ≈ 175 RPS avg, 10× peak → 1.75k RPS. With Redis 80% hit, DB sees \~350 RPS at peak.
+  * **Writes**: 2M/day ≈ 23 RPS avg, 10× peak → 230 RPS. Postgres easily handles with proper indexing.
+* **Share lookups**: bursty; edge caching + Redis ensures p95 < 100ms.
+
+---
+
+## GDPR/PII Implementation Details
+
+* **Data map**: Document fields, purpose, retention, lawful basis.
+* **DSAR**: API `/internal/dsar/export/{userId}` generates signed URL; throttled; audited.
+* **RTBF**: `User.deleted_at` set; cascade soft-delete colors; scramble personal identifiers; revoke shares; purge caches; produce `UserDeleted` event for downstream systems.
+* **DPA/SCCs**: Configure data residency (EU region for EU users) via tenancy routing key.
+
+---
+
+## Extensibility
+
+* **Palettes** (multiple colors), **tags**, **comments**, **org workspaces** (multi-tenant via `tenant_id`).
+* **Social preview** (OG image service at edge).
+* **Bulk import/export** (ACO/CSV).
+* **Webhooks** on color changes (signed, retry with backoff).
+* **ABAC policies** for enterprise (project-level sharing, group rules).
+
+---
+
+## Risks & Trade-offs
+
+* **Multi-region writes**: If we choose single-region primary per cohort, we keep strong consistency but pay cross-region latency for roaming users. Global NewSQL (Cockroach/Spanner) reduces latency at cost/complexity.
+* **Public share links**: Risk of token leakage via referrers; mitigate with `Referrer-Policy: no-referrer`, short expirations, token rotation, and optional password for sensitive shares.
+* **Caching staleness**: Keep TTL short; use cache tags/keys for precise invalidation.
+
+---
+
+## Minimal Sequence (Saving a Color)
+
+```
+FE → Gateway → Color API → Postgres
+FE ← Gateway ← Color API (201)
+Color API → Redis (invalidate)
+Color API → Kafka (ColorCreated)
+Audit Worker ← Kafka → WORM store
+```
+
+---
+
+## Rollout Plan
+
+1. **MVP**: Single region, REST, Postgres, Redis, CDN for static; OAuth login; CRUD; share by link.
+2. **v2**: Direct user sharing, audit events, basic DSAR.
+3. **v3**: Multi-region active-active stateless; read replicas; edge share pages.
+4. **v4**: Enterprise features (tenancy, RBAC), NewSQL if needed.
+
+---
+
+If you want, I can also provide:
+
+* A **Postgres schema + migrations**,
+* A **sample OpenAPI 3.0 spec**,
+* Or a **React + Node sample repo structure** with caching and E2E tests.
+
+
