@@ -1,0 +1,282 @@
+Round 3: Values: (Collaborative & Influential, complex situation or examples, conflict handling & decision making)
+
+Open Company, No Bullshit:
+1)Tell me about a time your first impression of a person or situation was incorrect
+    * How did you arrive at your initial impression?
+    * What helped you see things differently?
+    * How did that new view change your perspective?
+    * What did you learn?
+
+    Swiggy paas would be simple effort for api migration.lot of things had to considered.
+
+2)Tell me about a time you had a different point of view about how to solve a problem with someone on your team.
+    * What problem were you trying to solve?
+    * What were the opposing viewpoints?
+    * What steps did you take to resolve this?
+    * What was the outcome?
+
+    Elastic search issue ,benifit of it.
+
+
+
+3)Tell me about a time you had to give someone constructive feedback.
+    * How did you approach it?
+    * What feedback did you have to give?
+    * What was the response?
+
+    code was not moduler and pr comment and naming convetions.
+
+4)Tell me about a time you had to tell a manager or product owner that your work wouldn't ship on time.
+    * What were you working on?
+    * What was the issue?
+    * How did you go about telling them?
+    * What was the reaction?
+    * What was the outcome?
+    * What did you learn?
+
+    While migrating three SOAP services from IaaS to PaaS at Microsoft, we discovered that one UI service had complex local setup issues that delayed integration testing.
+I informed my manager and product owner early, shared data on the delay, and proposed a two-week extension to fully automate local setup and ensure quality.
+They appreciated the transparency, we delayed rollout, and the end result was a smooth migration with better developer tooling that sped up future work.
+I learned the value of raising risks early and always pairing bad news with options and a mitigation plan.”
+
+*Give me an example of a time where you received criticism from someone else.
+    * What was the situation?
+    * How was the feedback delivered?
+    * How did you react?
+    * Did you change anything going forward?
+
+    At Swiggy, my early PRs often got criticism on naming conventions and code structure. Instead of taking it negatively, I carefully reviewed the feedback, asked clarifying questions, and started double-checking my commits. Over time, my PRs needed far fewer changes, and I eventually began mentoring juniors on the same best practices.”
+
+5)Tell me about a time when you screwed something up at work.
+    * What was the situation?
+    * What was your mistake?
+    * How did you realise?
+    * What did you do?
+    * What was the outcome?
+    * What did you learn?
+
+    At Swiggy, I once pushed a one-line SLA configuration change to prod without proper testing, which caused incorrect delivery promise times. I quickly rolled back, wrote tests for default values, and redeployed after validation. It taught me that no change is too small to test before shipping.
+
+
+Build with Heart and Balance:
+
+6)Tell me about a time that you had to balance competing business, team, or project priorities.
+    * What were the competing priorities?
+    * What were the tradeoffs you had to consider?
+    * What outcome did you eventually settle on?
+    * What was the result?
+
+    At Swiggy, I had to balance speed vs. stability while migrating the payment module. Instead of a risky big-bang release, I chose a gradual rollout (1% → 10% → 50% → 100%) with load testing and monitoring. This slightly delayed launch but ensured zero downtime and improved payment reliability.
+
+7)Describe a project or a specific job where passion was the driving force behind your efforts.
+    * What was the project?
+    * Why were you passionate about it?
+    * How did this influence the way you worked?
+    * Was the project a success?
+
+    At Walmart, I led the migration from DB-based search to Elasticsearch to enable faster, more relevant type-ahead search. My passion for scalable search systems pushed me to run POCs, tune analyzers, and design a modular solution that other teams later reused. The result was <50ms search latency and a significant boost in user experience.
+
+8)Tell me about a time when you built something from beginning to end.
+    * What was the project?
+    * What were the challenges and trade offs?
+    * Was there scope change during the project?
+    * How did you manage it?
+    * Were you successful?
+    * What would you do differently going forward?
+
+    At Sixt, I built a driver webhook service from scratch in Go that unified different vendor payloads into a single API. The challenge was designing a generic yet secure solution — I used the Kazam library to transform requests into a common POJO and implemented security with a factory method. Scope evolved as new vendors were added mid-project, so I made the service highly configurable to minimize future code changes. The rollout was successful, reduced onboarding time for new vendors, and became a reference for other teams. Going forward, I would invest earlier in automated contract testing to catch vendor payload issues sooner.
+
+
+
+8.1)Tell me about a time when you had to make a decision without all the information you needed.
+    * What was the situation?
+    * What was the decision?
+    * What information was available to you?
+    * What steps did you take?
+    * What was the result?
+    * Would you have done anything differently?
+
+    At Microsoft, I was asked to migrate three SOAP-based services from IaaS to PaaS with very little documentation and unclear ownership. I decided to first map out dependencies by reverse-engineering configs and tracing live traffic, then broke the work into smaller deliverables starting with the least risky service. This incremental approach helped us validate assumptions early, uncover hidden dependencies, and complete the migration with minimal outages. Next time, I would invest even earlier in stakeholder mapping to avoid delays caused by unclear ownershi
+
+9)Tell me about a time when the scope changed unexpectedly mid-way through a project.
+    * What was the project?
+    * How did the scope change?
+    * How did you manage it?
+    * What were the challenges?
+    * What was the outcome?
+    * What learnings did you take away from the experience?
+
+    At Microsoft, while migrating three SOAP-based services from IaaS to PaaS, mid-way through the project we discovered an additional UI service dependency that also had to be migrated for the flow to work end-to-end. This significantly expanded the scope and required re-estimating timelines. I worked with product and engineering managers to reprioritize tasks, automate local setup for the UI service, and parallelize work across team members. The migration was delayed slightly but completed successfully with improved developer tooling for future work. I learned to always invest in early dependency discovery and stakeholder alignment to catch such scope impacts earlier
+
+10)Tell me about a time where you had to stop working on a project before it was completed.
+    * What was the situation?
+    * Why did you need to abandon the work?
+    * Do you think it was the right thing to do?
+    * What was the outcome?
+    * What would you do differently next time?
+
+  At Microsoft, I was working on the egress project where we processed XML data uploaded to blob storage. There was an initiative to migrate to v2 XML format, and after months of design discussions, we started implementation in parallel. However, due to delays and shifting priorities, the funding was pulled and we had to stop the work. I agreed it was the right decision since the business impact had changed. The main outcome was partially completed code that we documented for potential reuse. Next time, I would push for a quicker MVP or design spike to validate feasibility earlier and avoid sunk costs.
+    
+
+Don’t Fuck the Customers
+11)Tell me about a time when you had to make a tradeoff that involved potentially causing pain for a user or customer.
+    * What was the challenge, and what were some of the pros and cons of each option?
+    * How did you approach the decision?
+    * What was the outcome of the decision, and how were users or customer affected?
+
+    Explain wallmart example.
+
+12)Tell me about a time where you have shipped a bug/mistake to a customer or stakeholder.
+    * What did you ship?
+    * What was the impact?
+    * How did you fix it?
+    * What was the result?
+    * What did you do differently going forward?
+
+    “At Swiggy, I shipped a one-line change that appended a configurable SLA delay but didn’t test it with all values — the default 0 was added to actual SLA, causing incorrect delivery times for some orders. We quickly rolled back the change, wrote tests for default and edge cases, and redeployed after validation. The issue was fixed the same day with minimal customer impact. Since then, I always test even small changes in lower environments and added regression checks for configuration defaults to our CI pipeline.”
+
+13)Tell me about a time when you have gone above and beyond to make a customer or stakeholder experience great.
+    * What was the situation?
+    * What did you do?
+    * Why was this above and beyond?
+    * Why was this important?
+    * What was the reaction?
+
+    Walmart experiance quickly doing poc.
+
+14)Tell me about a time you have had a challenging situation with a stakeholder.
+    * What was the situation?
+    * What made it challenging?
+    * How did you manage it?
+    * What was the outcome?
+
+    During Microsoft’s Sovereign Cloud migration, stakeholders pushed for fast delivery despite many unknowns. I built a detailed Excel tracker and shared daily updates, which improved transparency, reduced friction, and helped us deliver on time — the tracker became a template for future projects.
+    Learning:
+I learned that visibility and proactive communication are critical in high-pressure projects — they build trust with stakeholders and reduce escalation risk even when there are unknowns.
+
+
+
+15)Give me an example of a time where you had to change a deadline to ensure the deliverable met the customer/stakeholder needs.
+    * What was the situation?
+    * Why did you need to change the deadline?
+    * How did you come to this decision?
+    * Did you meet their needs?
+    * How did you manage your stakeholders?
+
+    swiggy example : not breaking exiiting code.
+
+16)Provide an example of where you have made a decision that had an adverse effect on a customer.
+    * What was the situation?
+    * What decision did you make?
+    * What was the effect on the customer?
+    * What was the reaction?
+    * What did you learn?
+
+At Swiggy, I shipped a small SLA config change without testing, which caused incorrect delivery promise times for some users. I quickly rolled back, fixed it, and added tests for default values. This taught me that even small changes can have big customer impact, so I now always validate changes in staging
+
+Play as a Team
+17)Describe a situation in which you had to arrive at a compromise with someone to move a project forward.
+    * What was the situation?
+    * What was the compromise?
+    * How did you reach an agreement?
+    * What was the result?
+
+     IAAS to paas UI Migration was added in between.
+
+    “At Microsoft, when an extra UI service was added mid-way to our IaaS → PaaS migration, I proposed splitting the work — deliver the three main services on schedule and handle the UI migration in the next sprint after automating setup. This met the deadline while reducing team stress and still delivered all scope.”
+
+18)Tell me about a time you were working on a project where your co-collaborators were holding back the process.
+    * What was the project?
+    * What was holding back the process?
+    * How did you manage this?
+    * What was the outcome?
+    * What did you learn?
+
+    At microsft i was project stam platform.
+    team member was not able to solve the issue and he was not trying much to solve the issue. We had to move from password to manageidenty.
+    i pitched in .solved it . we need to keep track of junior work.
+
+19)Tell me about the most effective team you've ever worked with.
+    * What made the team so successful?
+    * What was the team able to achieve?
+    * What was your role in supporting these outcomes?
+    * How did you feel about working with this team?
+
+At walmart , all senior engineers were there and any issue we were helping each other.
+
+
+20)Tell me about a time you helped someone else improve.
+    * What was the problem they were facing?
+    * How did you identify the problem?
+    * What steps did you take to help?
+    * What did you do to make sure your help was effective for your teammate?
+    * What was the outcome?
+
+    At walamrt , making all code moduler and reusebale and cod eto interface.
+    i show cased them the example .strict pr review.
+
+21)Tell me about a time that an approach you fought to have adopted wasn't.
+    * What was the approach?
+    * Why did you feel it was important?
+    * Why was it not adopted?
+    * What feedback did you receive?
+    * How did you process this?
+    * What would you change going forward?
+
+    IAAS to paas : just moving the backedn to new service . along with UI service also.
+
+
+Be the change you seek:
+22)Tell me about a time that you supported your team / a teammate to manage a major change.
+    * What was the situation?
+    * How did you support your team?
+    * What were the main challenges?
+    * What was the result?
+    * What did you learn?
+
+    IAAS to paas : Testing from soap UI and check with and without security.
+    POC with personal aap service.
+
+23)Tell me about a situation where you were given a project or goal that was completely new to you.
+    * What was the project?
+    * How did you approach it?
+    * What resources did you consult?
+    * What was the outcome?
+    * What did you learn along the way?
+
+IAAS to paas was totally new to me.
+Sov cloud task was new to me.
+
+
+
+24)Tell me about a time you’ve had to deal with vague requirements.
+    * What were the requirements?
+    * Why were they vague?
+    * What actions did you take?
+    * What was the outcome?
+    * What would you have done differently?
+
+    IAAS to paas 
+
+25)Give me an example of a time when you initiated change to solve a problem you had identified.
+    * What was the change/solution?
+    * Why was it needed?
+    * How did you implement it?
+    * Was it successful?
+    * What were the challenges?
+    * What did you learn?.
+
+    Microsoft Azure.
+Config were hardcoded in repo.moved to azure app config.
+
+
+25)Tell me about a time where you have asked for feedback, and how you changed yourself based on that feedback.
+    * What was the feedback?
+    * What made you ask for feedback?
+    * How did you take the comments?
+    * What steps did you take to change?
+    * What was the outcome?
+
+    During 1:1 feed was to proacitivly sent communacation for the development of all the projects so leadership can track the progress.
+    took in positive way.
+    Proactivly document the work and sent regular work update to leadership.
