@@ -1,4 +1,201 @@
-System Design
+System Design:
+
+Adding more context to the topics shared earlier,
+
+*1. Color Picker*
+*Design a web application that allows you to pick your favorite color and save it.
+
+    * Data Model and API design
+    * Show how Front end and backend talk to each other (REST, SOAP, gRPC, etc.)
+    * Why did you choose technology X
+    * How does your decision to do Y meet the scoping requirements?
+    * Talk through and go deeper into the proposed Architecture
+    * Design the solution that can accommodate future features (ex: PII, GDPR)
+    * Share the colour with other user
+    * Scale this to millions of user (Talking about caching techniques (CDN, redis, Akamai, Cloudflare)
+    * Latency (Active active DB, replication, DNS)
+
+
+*2. Tagging Service*
+*Requirement Gathering:
+    * Build a systems that allow users to tag content from different products
+    * User can add, remove and update tags
+    * User can click on the tag to see the content
+    * Dashboard for popular tags
+
+* *API design:*
+            * A CRUD API to power adding, removing, and updating tags on content
+            * API to fetch content given a tag ID (keep in mind about pagination)
+            * API to fetch popular tags
+                - This API is very similar (i.e. just “give me popular tags”, perhaps with pagination)
+                - The challenge is implementing ‘popularity’
+            * Key callouts 
+                - Character set used in in tags and how can it affect encoding or API requirments
+                - how large tags can be
+                - whether there is a limit on the number of tags that can be assigned to a piece of content
+                - Talk about ‘hydration’ concerns for returning content when searching by tag
+
+** Data Modelling:*
+            * Key-value lookup where the key is the content ID (and possibly content type), and the value is the list of associated tags
+            * Key-value lookup (or search-style access) where the key is the tag (or tag ID) and the value is the list of associated content
+            * A scan over all entries to determine popular tags (based on tags used in the past 24 hours)
+            * Example solution - Dynamo DB based solution
+                - The Partition Key is the content key (i.e. the compound key $contentId:$contentType)
+                - The Sort Key is the value of the tag
+                - There are several attributes (TagValue, Timestamp)
+                - On this table, we can then create a Global Secondary Index (GSI)
+                    - The Partition Key is the TagValue
+                    - The Sort Key is the Timestamp
+To solve the most popular tags require a secondary data store (You can use DynamoDB Streams for pre-calculating data or use redis)
+                    - The Partition Key of $contentId:$contentType will have a max read & write throughput (Ex: https://aws.amazon.com/blogs/database/choosing-the-right-dynamodb-partition-key/)
+                    - Read throughput concerns could be mitigated by the addition of a caching layer
+                    - TagIndex is likely to become a hot partition if there is a very popular tag, this may require some form of caching solution to mitigate
+** Scaling:*
+        * *Scaling up the popular tags API* 
+            * Pre-calculating data to improve query efficiency
+                - keep track of a per-tag counter as we update tags
+                - Instead of single global counter use buckets with 5 to 30 mins bucket size)
+                - Query: Then query using SELET SUM(count) FROM tag_counts WHERE bucket_start_timestamp > ? GROUP BY tag.
+            * Cache the popular tag result and serve data from the cache
+                - Read replica & caching
+                - Create a read-replica of your primary database
+                - Setup a CRON-job to run every 5 minutes to find the popular tags by querying your read-replica, and save the results in a cache (either something like Redis, or even just a dedicated table in the primary database)
+                - Always serve results from the cache
+        * *Scaling up remaining APIs* (well designed DynamoDB schema and access pattern can be used to perform this or use data sharding for different access pattern, dive deep on shading strategy)
+        * *Introducing permissions*
+                - All users are in the group ‘everyone’
+                - Users can also be in other groups
+                - Each piece of content can have a list of groups and a list of users that can see it. Content without restrictions is open to the special group ‘everyone’.
+
+
+*3. Web Scraping Service (Web-queue-worker architecture)*
+** Requirement gathering:* 
+    * How many levels deep does my scraper need to go (initial submitted url → some other page → some other page)
+    * How many scraping job submissions per second
+    * How many URLs are in job submissions? (Limit input size)
+    * How should the system handle broken links / missing images? (Treat these as leaf nodes)
+    * How long should results be stored for?
+    * How available should the system be?
+    * How should the system handle slow or large responses from scraped web servers?
+        * Slow responses: (Timeouts or retries or blacklisting)
+        * Large responses: (streaming parsers)
+    * How should the system respond to greedy users who submit many jobs or submit particularly big jobs?
+
+* *Architecture Diagram:*
+    * ALB connects to auto scaling group of web boxes hosted on EC2, which handles the 3 different incoming web requests
+    * web boxes submit jobs to an SQS queue
+    * SQS queue is polled by several worker processes running on a separate autoscaling group of worker boxes, which actually do the scraping
+    * Scraping results are persisted to an RDS db and read by the web tier
+    * Make sure for each component (load balancer/process/data store/queue) you know the “why”
+
+** Data Model:*
+    * Queue message payload (url_id, url_to_crawl, depth_remaining)
+    * jobs - DB table (id - primary key, UUID generated client-side
+    * urls  - DB table (id - synthetic primary key, job_id, for in_progress_count, also talk about optimistic locking or select-for-update or store this data in a data store like redis)
+    * results - DB table (id - synthetic primary key, url_id, image_url (use postgres arrays or json storage can be used to fold this in url table) 
+
+** Scaling:*
+    * Performance bottleneck, auto-scaling
+    * What happens if the database is not available when the queue is available, or vice versa?
+    * What happens if the job queue goes down while jobs are on it? Is any data lost?
+
+
+*4. Design the popular feed on a content authoring platform such as Confluence*  (News feeds Ex: https://medium.com/@ishwarya1011.hidkimath/system-design-feedback-system-88a67b81a8b3)
+* *API Design:* 
+    * Gather the popularity indicators, content views, likes and shares.
+    * Calculating the top-n popular content
+    * Providing real time updates to the client
+    * As a user, I can see the top-n most popular content in the system at any given time.
+    * As a user, I want to see freshness in the popular content and not the content I’ve already read.
+    * As a user, I may view this feed in any device - web, mobile, tablet. 
+    * Your team’s system should be able to generate any user’s popular feed in real-time - maximum latency seen by the end user would be 2s.
+
+* *Data Modelling:* 
+    * There are three primary objects: User, Content, and Popularity Indicators
+    * IndicatorHistory is generated when a User takes and action on Content that effects its popularity
+    * Content may have many IndicatorHistory records.
+    * Each IndicatorHistory record is generated by a single User.
+    * Each IndicatorHistory record has a type of popularity indicator represented by PopularityIndicator records.
+
+** HLD:* 
+    * *Popular Feed gathering:* We need to collect data on what is becoming popular. This will include gathering data on:
+        1. When new content is created or deleted.
+        2. When any of the social indicators are triggered (comments added, page liked)
+   This can be a pub-sub model based service (a feed collector service) that is listening to events and saving to the database
+        3. *Popular Feed generation:*
+        * Popularity feed is generated from pages users create on Confluence and the comments on the pages. So, whenever the system receives a request to generate the popular feed for a user, we will perform the following steps:
+        * Retrieve IDs of the all the content for a user that have the highest PopularityIndicator.  
+        * Filter to top-n IDs of content starting from next_token to end of count 
+        * Store this feed in the cache and return top posts (say 20) to be rendered on user’s feed.
+    * One thing to note is that cache should be cleared at regular intervals to make sure that the feed has freshness - so any new data will show up. 
+        * *Components for popularity services:* (Connection management - API gateway, User Activity Ingestion - interface for ingestion & separate component for queuing activity, Durable Storage, Customer Facing access)
+
+** Scaling:*
+    * How would you plan for burst day traffic? (horizontal scaling, caching, alerting)
+    * How will they achieve performance of 2s latency? (Levels of caching - client, application, database, in-memory)
+    * How achieve near realtime updates to the client? (Push or polling method)
+    * How will they test their system for resiliency? (load testing, war games, chaos monkey)
+
+
+*5. Hierarchical Data Storage System*
+** Requirement Gathering:* 
+    * Design a system to store and retrieve a hierarchical model which can store any data with the following characteristics
+    * all nodes are under a root node, the root node doesn’t have any parent
+    * there can be multiple root nodes
+    * each node can have multiple child nodes
+
+* You need to design the following functionality into the system
+    * add child node to any node
+    * get all the children of a node, along with an indicator to show if each child node have further children or not, let’s call this the TERMINAL node indicator.
+
+* *Focus on tree structure storage, retrieval design, and the challenges associated with that*
+
+** API Design:*
+    * API: Add node (build a rest API for adding a node taking the node_id of a parent node)
+    * API: GET children of a node (build a rest API that takes in a node_id and returns the list of child nodes)
+
+** Data Modelling:*
+    * DB choice, NoSQL vs SQL, and why?
+    * *For SQL solution*
+        * what are the indexes on the relations? are the indexes mindful of data access patterns?
+        * what are the foreign key(FK) constraints?
+        * how to avoid data being corrupted at the DB level?
+        * one node having multiple parents, is there a unique constraint added on the DB to avoid this?
+        * how are root nodes represented in the model?
+    * *DB model: GET children of a node*
+        * SQL queries for getting all children of a parent node (are the APIs paginated?)
+        * how do you structure data to know if a node is TERMINAL? (is there some indicator on every node DB row to indicate if it’s a TERMINAL node? 
+        * why did you NOT have an FK reference for parent_id ( if parent_id is NOT FK then is there an index on it to ensure the query patterns can be served optimally)
+        * query the parent with the most number of children
+        * total number of parents with greater than T number of children where T is an arbitrary number, for ex: 50
+
+** Scaling:*
+    ** View Ancestors* (API design & Data Modelling. Ex: https://medium.com/analytics-vidhya/storing-hierarchical-data-in-dynamodb-fd7d73eb9250)
+
+    ** Scale APIs* 
+        * (Discussions on caches https://danielw.cn/cache-consistency-with-database#concurrency-in-write-through, 
+        * Discussion on DB sharding, replications, and hot shards (what is the shard key? how does shard lookup work? what if some shards get hot and a single shard instance cannot serve all the traffic? with read replications, discuss about “read-after-write” problems
+        * Discussion around operational aspects (what alerts and metrics would you have for the systems? data inconsistencies in DB and caches alerts? any rate limits on write APIs? cache hit ratio metrics?)
+        * Discussion around latencies across the globe ( multi-region deployments and cross-geo replication discussions, are you aware of some  3rd party CDN vendors to solve for HOT root nodes? how would the system determine which root nodes to insert into the CDN?)
+
+    ** Reorder Nodes* (Our users want the capability to reorder child nodes under a parent node)
+        * You can spread the relative_position far apart so that when a node is moved to a position, a random relative_position is given b/w the 2 node’s relative_position for example, relative_position can be 100, 200, 300 so on.. when a node is moved b/w 100 & 200 it gets a random relative_position b/w the range.
+            * challenge with the above approach is we can run out of space to move a new child b/w two children
+        * to overcome the above challenge we can have a cron job to rebalance the relative_position
+        * explore what is the criteria for when a corn job would be triggered to rebalance. (since the queries might NOT be optimized would you run it on primary DB?)
+            * drawbacks, during rebalancing the relative_position there will be bursty write traffic to the DB
+        *  to avoid a cron job, after every re-order operation check if there is a need to rebalance relative_position. (Ex: https://medium.com/whisperarts/lexorank-what-are-they-and-how-to-use-them-for-efficient-list-sorting-a48fc4e7849f)
+
+    ** Permission Handling*
+        * How do we handle permissions? A user cannot view the child node if they are not given access to any of the ancestor nodes
+        ** Product requirements*
+            * We should be able to explicitly provide/revoke access to some users
+            * By default, all the users get view access to all nodes
+            * Scope the permissions problem to only VIEW permissions
+        ** Solution: permission modeling can be handled by having the two models,*
+            * permissions on node
+            * restrictions on node
+            * challenges with permission for paginating APIs?
 
 
 
@@ -9,7 +206,7 @@ TEST
 Some test
 
 
-Atlassian:
+atl:
 
 Round 4: Data Structures & Algorithm
 
@@ -21,8 +218,8 @@ Points to be considered in this round
 
 
 1. Find the Closest Org for Target Employees
-    * Imagine you are the team that maintains the Atlassian employee directory. 
-    * At Atlassian - there are multiple groups, and each can have one or more groups. Every employee is part of a group.
+    * Imagine you are the team that maintains the atl employee directory. 
+    * At atl - there are multiple groups, and each can have one or more groups. Every employee is part of a group.
     * You are tasked with designing a system that could find the closest common parent group  given a target set of employees in the organization.
 
 * Requirement Gathering: (Ask the below questions & assumptions)
@@ -50,7 +247,7 @@ Points to be considered in this round
         * Non-existent employees. 
 
     - Scale up:
-    1. The Atlassian hierarchy sometimes can have shared group across an org or employees shared across different groups - How will the code evolve in this case if the requirement is to provide ONE closest common group?
+    1. The atl hierarchy sometimes can have shared group across an org or employees shared across different groups - How will the code evolve in this case if the requirement is to provide ONE closest common group?
     - The DFS now becomes DAG
     - Find the multiple closest org groups (Below are a few options and talk about the trade-offs in the approach)
         * Alphabetical ordering
@@ -264,7 +461,7 @@ const d: int[] = findShortestPath(destination, backward = true)
 
 6. Job Interval Reporting
     * CI pipeline count
-        * Atlassian runs a lot of CI pipelines and our team is tasked to  build some reporting on the usage to find some cost optimisation patterns.
+        * atl runs a lot of CI pipelines and our team is tasked to  build some reporting on the usage to find some cost optimisation patterns.
         * Each CI pipeline starts at a given time X and ends at Y. We are given a list of CI pipeline time windows {X,Y}.
         * [{X,Y}, {X`, Y`}, ….]
     * Find the time windows where at least one CI pipeline is running.
@@ -655,13 +852,13 @@ MovieSchedule schedule) method
 •⁠  ⁠monthlyCostList is an array of size 12
 •⁠  ⁠Level 0: Multiple Plans for a Product
     * You are working with other teams who provide you the following requirements,
-    1. Atlassian pricing plans
+    1. atl pricing plans
         * To keep it simple, we're keeping one pricing for each product, in reality we'll have multiple pricing plan
     2. Customer subscription information
         * Initially the problem only expects one product in the list, but during scale-ups we can add multiple products into the mix
 
 	Sample:
-		//  Atlassian pricing plans as tuple of {planId, monthlyCost}
+		//  atl pricing plans as tuple of {planId, monthlyCost}
 		[
 		 {BASIC, 9.99},
  		 {STANDARD, 49.99}, 
@@ -722,7 +919,7 @@ MovieSchedule schedule) method
 			annualCost = monthlyCostList.sum()
 
     * Level +2: Subscribe to multiple products
-        * Atlassian has other products as well and customer decides to subscribe to them as well. Assume product pricing to be the SAME across products. This means we can reuse previous pricing plans and update Customer subscription information
+        * atl has other products as well and customer decides to subscribe to them as well. Assume product pricing to be the SAME across products. This means we can reuse previous pricing plans and update Customer subscription information
         * endDate is Optional if not specified, it continues into the next year. This means we calculate annual cost assuming the payment until the end of the year.
         * We now expect CostExplorer to generate 3 reports
             1. Monthly cost (Generate a monthly bill)
