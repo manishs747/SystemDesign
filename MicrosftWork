@@ -1,1 +1,659 @@
+Invoice- legal doc which companies provide to organizations who consume their services. 
 
+Contains all details, transactions and tax details. 
+
+ 
+
+We will generate invoice for customer or partners who consume services from our Azure cloud.  
+
+Partners acts as resellers of our services. They add some support or customizations etc. and sell to customer with their own pricing. 
+
+There are different types of sales motions, but we are generating invoice for all. 
+
+3 different sales motions- 
+
+- field led 
+
+- partner led - we will generate the invoice for partner but it consists of services consumed by their customers. 
+
+- customer led 
+
+ 
+
+Partner Indirect- only one to one mapping between partner and customer. 
+
+Same partner can have another customer but not under the same contract. 
+
+ 
+
+Partner Reseller- one to many. One partner serves many customers. 
+
+ 
+
+Field led Invoice for EA(Enterprise Agreement)- We are generating data which is being sent to SAP to get invoiced. 
+
+Invoicing is not happening within our system. 
+
+ 
+
+Invoices are generally generated monthly but- 
+
+Immediate Settle Invoice - There are some scenarios where invoice needs to be generated immediately- 
+
+- Suppose customer or organization came in and paid via credit card immediately. 
+
+(Like we receive invoice when we buy something on amazon) 
+
+ 
+
+Bill Immediate Invoice - It also happens that we need to generate invoice immediately but payment will come 
+
+at a later point of time-(called Bill Immediate Invoice) 
+
+ 
+
+Sandbox Invoice- can be a field led or direct or partner invoice but customer or partner  
+
+does not need to pay anything. It is just a sandbox for customers to try out features in azure. 
+
+We generate invoice with a statement that it is a sandbox invoice. 
+
+While revenue recognition also, these are not considered. 
+
+ 
+
+Entities for Invoicing- 
+
+Billing group/Billing Profile- its an entity where billing instructions or billing frequency, purchase context. sandbox or not  
+
+etc are maintained. It has Organization id, billtolocationid, customer or partner data, billing instructions- payment types ,  
+
+billing date, billing cycle 
+
+Billing profile does not consist of transactions. It only defines how the billing will happen. 
+
+ 
+
+Account- Actual commerce root account for a partner or customer. It will have customer id, purchase motion, 
+
+For an account, there will be organizations being set up. You can get organizations by account id 
+
+There can be a single or multiple organizations for an account 
+
+ 
+
+Organization has purchase context, Culture info based on region and location. 
+
+ 
+
+If purchase type is direct and Organization is Individual, then it is Direct or Customer led Invoicing. 
+
+ 
+
+Jarvis is one system, MCAPI is another system. Partner center data is mainly in Jarvis. 
+
+Jarvis Account profile- default address, type of profile is legal entity or 
+
+ 
+
+Account is the root. Account can have multiple organizations. 
+
+From organization there is a customer master info where you can see cid, profile id and address id- these are  
+
+actually from jarvis. 
+
+ 
+
+Modern Invoicing Service reads Order journal 
+
+ 
+
+Pre bill billing group journal reader will read all the billing groups and create same internal billing groups 
+
+ 
+
+Billing aggregation groups which will be created under a billing group. 
+
+The invoice will be created at billing aggregation group level and Not at billing group level. 
+
+ 
+
+How 2 bill aggregation groups are identified out of a billing profile? 
+
+- we have Mcapi billing group, and we have Mcapi organization 
+
+ 
+
+Scenario- 
+
+- Today is the first day. Customer started transacting and purchased some VM instance for 1 year. 
+
+- It reaches to purchase and there is a billing associated with that.  
+
+- It comes to order which collects the asset/subscription details of the customer. It also connects with Bigcat- (Big cat is a catalogue).  
+
+- Order system combines all details from purchase, billing, project, asset, Bigcat and push it to Pre bill. i.e. it produces all the data in the order journal as an Order. 
+
+- So Pre bill will consume Order journal data using Order journal reader. Order will be converted to unbilled line item. 
+
+- Line item has to be part of one of the order aggregation groups. 
+
+- Line items are grouped together into line item sets. (use some logical grouping) 
+
+- Each Billing aggregation group can have flush instances. Flush instance is associated with line item sets. 
+
+- When a flush instance is flushed we have to generate invoices for all the line items associated with the line item set id in  
+
+  the flush instance. Partition Key for Billing group flush instance-  
+
+  customer id : billing group id : billing group aggregation id 
+
+- flush type is Bill immediate/ immediate settle/ force flush/ schedule flush 
+
+- billing group, billing aggregation group , Line item set, flush instance , all are pre bill entities. 
+
+- Based on line item set id there is tax calculation and the call comes to post bill service 
+
+- Create a document by some calculations from all the line items. Like total amount. total tax, any azure credits applied. 
+
+ 
+
+Document Related Entities- 
+
+- Document Info entity- there are document line items associated with document info entity 
+
+- Document Line Items- Multiple document line items associate with one document info.  
+
+- Document Family- suppose an invoice gets generated and customer sees a discrepancy in it. So customer wants it to be regenerated correctly. So we will void the invoice which was already delivered and create a void note for it and send it to customer.  
+
+  Then we generate a new invoice. So when there is case of rebilling, there are total 3 invoices - the original, void note,  
+
+  and the new one. All these will be called a document family.  
+
+  So document family has collection of document ids associated with it. 
+
+- Document Indices- This is the first entity we are creating even before document info.  
+
+- Line Item Set Payment Entity- Recorded in Billing core system. We read all the line item set events and apply the payments  
+
+  against the line item set. 
+
+- Line Item Set summary 
+
+ 
+
+Modern Invoicing Post Bill Service- 
+
+ 
+
+Most imp function of invoicing service is to generate invoice and record payments 
+
+ 
+
+1. Generate Invoice 
+
+2. Notify the customer about the generated Invoice. Customer can view or download the invoice. 
+
+3. When customer pays something, record the payment. 
+
+4. Modern Invoicing Post bill processor receives the request from Pre bill system to generate invoices 
+
+5. Important information needed to generate invoice- Unbilled line items, Billing group, billing aggregation group, flush instance,  
+
+   flush type, Line item set info 
+
+6. We need to make certain additional integrations outside of pre bill 
+
+7. During the flush request we collect all the above information from pre bill and then get foreign exchange, tax exemption id,  
+
+   Bill to address, sold to address, Ship to address and other required data that needs to be printed on the invoice from external 
+
+   services  
+
+8. Then document line items and document info are created. 
+
+9. These are put into the journal service and journal database 
+
+10. We maintain different HTML templates based on the Country etc. 
+
+11. Now this HTML needs to be converted to pdf. For that we have DRS- Document Rendering System which is a generic service which converts any html passed to it into pdf and stores it at its end and returns a guid which is stored in to document info  
+
+    object which can later be used to get the pdf. 
+
+12. Dunning- creating emails to customers to pay the amount if customers did not pay or to cancel subscription etc. So whenever  
+
+    we create an invoice we make a call to dunning so that it can keep track of the payment. 
+
+13. MONI and LENS- Systems that send a notification that says "You invoice is ready to view". MONI is for one sales motion and 
+
+    LENS for another sales motion. 
+
+14. We are not even passing email id to these systems. We only send Customer id and these systems fetch the email id, language  
+
+    etc. from jarvis or MCApi and send the emails. 
+
+15. All the entities- either pre bill entities or post bill entities are stored in the Charge Aggregation Database 
+
+16. There are two more databases- Invoicing Journal and Document Detail Journal - Stores events and not actual entities.  
+
+    Invoice journal has invoicing events whereas the document detail journal has line item events. 
+
+17. Invoicing journal is for document Summary, document created, voided, payment etc. and Document Detail Journal is for Document Line Items 
+
+18. These databases provide the data to Journal Services (Invoice Journal Service and Document Detail Journal Service) 
+
+19. APIs are required to get data on demand.  
+
+20. Suppose an invoice is generated and partner is notified. Suppose they want to get the line items of the invoice.  
+
+    Or maybe someone wants to group all the invoices for a partner. So in such cases APIs are required which provide the  
+
+    complete set of data based on different varieties of input. 
+
+21. Cold Storage- All the invoicing entities which we are putting in charge aggregation and in journal database, we are actually 
+
+    putting in the cold storage. 
+
+22. Cold storage is nothing but ADL Cosmos streams and maintains data for 10 years 
+
+23. From Journal services we read the json and put it in unstructured streams and later there is ADL Scope scripts which convert them to structured. This is secondary storage for us. 
+
+ 
+
+Modern Invoicing Post Bill Components- 
+
+- Operation Processor - gets data from pre bill. The operation  processor is linked to the 3 databases- charge aggregation, invoicing journal, and document detail journal. Also sends data into invoicing event hubs. 
+
+ 
+
+- Line Item Set Journal Reader- gets lineitemset journal from billing core. 
+
+  Reads all events and using operations it puts the data into charge aggregation 
+
+ 
+
+- Invoicing Api- built on top of charge aggregation database to expose all api and enable few actions on top of our invoicing data. 
+
+ 
+
+- Invoicing Journal Api and Document Detail Journal Api- Multiple clients connect to these and get journal data. One such client is ADL Journal Loader which gets data from both the journal apis and upload the data to ADL Cosmos which converts unstructured data to structured data and then it is sent to invoicing kusto cluster.  
+
+ 
+
+Invoice Generation Process- 
+
+- Generate an Invoice number/Document id- unique Sequential number(10 chars)- a common service which is 
+
+  owned by both pre bill and post bill service is responsible for generating invoice numbers. 
+
+- For an invoice to be generated the inputs are billing group, billing aggregation group, flush instance, line item sets and unbilled line items 
+
+- Verifying LineItemSets Without Document-  
+
+- Executing Lock Tax- if request is being made for a line item set to billing core and tax calculation happens, and tax will be calculated and assigned to the line item set so this process will take some time, then a call will be made to create document. 
+
+- Ensuring LineItemSet Balance Owing Correctness- 
+
+- Document Entity Creation- first create document info, then create document line items from unbilled line items,  after than document family and document indices creation 
+
+- Once the entities are created and stored, the next step is invoice presentment. 
+
+- Invoice Presentment- Place where we generate invoice pdf out of document line items which we have. 
+
+- Storing all the document entities 
+
+- Reporting the LineItemSets to billing core- Report billed line items(means invoice is generated) and create a dunning schedule. (Dunning is process of looking at payment due dates and setting up alerts ) 
+
+- Notifying all the downstream that we have generated the invoice.  
+
+- Journaling out all the invoicing events, also journaling out all the line item events to the journal databases. 
+
+- Also publishing the events to event hubs. invoicing event hub and document detail event hub. 
+
+- So we are putting the events into journal databases as well as event hubs respectively. 
+
+- We have clients who are polling our journal services with a token so incremental data is given to them based on the token. 
+
+- Event hub is a pub sub model, so all the clients will be notified of the new events. 
+
+- Email Notifications are sent to customers using MONI and LENS/NARADA systems. 
+
+- We are not managing the email template. We only send the customer id, language etc. 
+
+- MONI and NARADA connect with Jarvis or Mcapi to get actual customer details and send the notifications. 
+
+ 
+
+To look at all the external integrations and request and responses going and coming from external systems- 
+
+ 
+
+Invoice Number- Unique sequential number with 10 chars length and starts with a g for global environment and t for test invoice numbers 
+
+ 
+
+There is an external invoice generator service where we make a call to the invoice number to get the unique sequential invoice number. 
+
+Contract for invoice generator service- 
+
+pass series types, company code, country code, postal code, invoice date etc. 
+
+The response from the invoice generator service consists of Payment number and display number. 
+
+The payment number is used as the Invoice number/document id. 
+
+Display number and payment number are same in most cases. 
+
+Sometimes we use separate display number w.r.t specific country. based on tax compliance. 
+
+ 
+
+Billing Group- There is an integration with Mcapi Billing group API. 
+
+We send the customer id and billing group id. 
+
+The response contains organization id, currency, instruction type, billing day, isexternalinvoice, 
+
+sandbox property, purchase context, etc. 
+
+ 
+
+Account Profile- We make a call to jarvis to get the account profile 
+
+We send the account id and the profile id. 
+
+the account profile will have the company name, email, currency code, language, billing address,  
+
+sold to address etc. 
+
+ 
+
+Bill to Address- This is the billing address in the account profile. Contains country, city, address line1, 
+
+address line 2 etc. This is printed on the invoice pdf. 
+
+There are few cases for partners where we need to fetch bill to address from some other source also. 
+
+ 
+
+Sold to address- Comes from Line item set. Line item set info is having some address id. 
+
+It can have multiple address ids. The latest line item set address id 
+
+is considered as the sold to address which we get from line item set info.  
+
+ 
+
+Publisher Profile- Third party publishers which publish their products. Even Microsoft charges for using those third party products  
+
+via azure. To get publisher details we need integration with two services. First, the account management service where we need to  
+
+pass the publisher id.  
+
+Based on the IsUaidByTenantID flag we need to make call to either Jarvis or account management service again. 
+
+Print all the third party publisher details on the pdf. 
+
+ 
+
+Forex Integration- To get the invoice in local currency of the customer. 
+
+Billing happens in USD but the invoice should be in local currency. 
+
+Forex Api publishes all the foreign currency rates. 
+
+It takes the previous month's average exchange rate. Exchange rate for a given date range 
+
+is also printed on the invoice. 
+
+Tax is calculated in the local billing currency and not in USD. 
+
+Forex also has another API exposed to get the daily exchange rate. 
+
+ 
+
+Tax ID Management- Sometimes customers are partners who are located in a Tax exempted region. 
+
+So while tax calculation, it needs to be considered and tax should be Zero. 
+
+We also need to put the tax exemption ID on the Invoice. So for that we make a  
+
+call to Tax ID Management service and pass some details and get whether any tax exemption ID 
+
+is present or not. 
+
+Tax is exempted for offices located in SEZ region. 
+
+ 
+
+These were all the external services needs to creating the  
+
+invoice. Now we create the invoice HTML and convert it to pdf. 
+
+To convert to Pdf we need integration with DRS Service. 
+
+ 
+
+DRS Service- Document Rendering Service is a general service which takes any 
+
+invoice HTML and gives back an ID. It stores the pdf at its end. with this returned ID 
+
+we can get the pdf of the invoice. 
+
+We put this ID in the document info object. 
+
+ 
+
+We have now generated the Invoice.  
+
+The next step we need to make a call to billing core and let them know that a specific line item set ID 
+
+got Billed. 
+
+ 
+
+Billing Core- We make a call to billing core and tell that this specific line item set ID 
+
+is associated with an invoice. So we are reporting to billing core. 
+
+  
+
+Dunning- After an invoice is created we need to integrate with dunning and create a dunning schedule. 
+
+They capture the request and pass the info back to us with a confirmation that capture schedule has been created. 
+
+It consists of capture date and due date. 
+
+ 
+
+One this is also done, we are journaling out the events to database and event hub. Those are internal integrations only. 
+
+ 
+
+Next is Sending Email Notifications- For field led and customer led we are using NARADA service and for  
+
+partner led we are using MONI service to send Invoice ready email notification. 
+
+ 
+
+Events which are journaled out in Invoice generation- 
+
+Document created 
+
+Document Line Item created 
+
+Document voided 
+
+ 
+
+Events from Line Item set journal reader - 
+
+Payment captured 
+
+Payment capture result 
+
+ 
+
+Events- 
+
+ 
+
+Document Created event- consists of information we need to put in the 
+
+journal database. Event id, event timestamp, event type etc. 
+
+customer id, billing group id, content type, producer id- producer id is Invoicing Processor 
+
+ 
+
+Document Voided- whenever original document is voided, a void note is created 
+
+Void note will have a new invoice number, but all the amounts will be same as the original invoice 
+
+but if amount is positive in invoice, then the amount will be negative in void note and vice versa. 
+
+This void note has a document reference to the original invoice. 
+
+ 
+
+Document Line Item Created- we are getting data from unbilled line items so from that we are generating  
+
+document summary and document line items.  
+
+the content type is document detail. 
+
+ 
+
+Document Additional Info Updated Event- only applicable in EA invoices. When EA is invoiced at our end 
+
+it goes to SAP so SAP will produce a unique invoice number at their end. That will be read from multiple sources 
+
+and used in Update Document Api. 
+
+ 
+
+Payment Captured Event-It is an Invoicing event. 
+
+Whenever payment is received for a line item set that payment we are sending out as an event. 
+
+Also along with it, the latest document summary is sent.  
+
+A document can be paid using multiple payments. And they came in  
+
+different timelines. So whenever first payment we have received, we are journaling this event  
+
+which will have the current payment details. And document summary will have the payment reference. 
+
+Then after few days we receive the second payment event then one more payment capture event will be 
+
+triggered and will have the payment details and document summary will have two payment references. 
+
+ 
+
+Payment Capture Result Event- sometimes payment can fail, then capture failure event is journaled out for  
+
+portals. We get the exact reason for transaction failure from billing core which we put in the result. 
+
+ 
+
+Important Api- 
+
+ 
+
+Get Document Summaries- to get list of invoices based on customer id, billing group id 
+
+Get document summary by document id 
+
+The payments and payment status is being generated dynamically. Document has a number of line item set ids associated with it.  
+
+For each of the line item set ids, the line item set journal reader is populating the payments from billing core and  
+
+putting it in line item set payment entity 
+
+So whenever we make a call to document summary, we are populating the payments first 
+
+ 
+
+Get Document Details- This gives the document line items in detail 
+
+Line item data is being populated from multiple systems- billing, purchase, asset, project, bigcat 
+
+Line item data comes from order journal to pre bill system. The pre bill system gives unbilled line items 
+
+which are converted to document line items 
+
+Details like list unit price, units, quantity, tax calculation id etc. are present in the document detail 
+
+ 
+
+Create Pay now- if customer has some prepaid amount in account, monetary commit(wallet), or if customer wants to pay by credit card 
+
+right away 
+
+ 
+
+Invoicing Event Hubs- Event hubs are present in Azure ecosystem. They support pub sub model  
+
+Clients are pulling the data from Invoicing journal and document detail journal to retrieve the 
+
+incremental events 
+
+We are publishing the invoicing events to the event hub so new customers/partners can subscribe to  
+
+event hubs instead of going to Journal services. 
+
+What we have in Event hubs and what we are producing from Journal services, both are same. 
+
+Event hub has Document created event, document voided event, document line item created event and payment captured event 
+
+event hub is backed by a blob storage 
+
+ 
+
+ADL Journal Loader- the Invoicing service and document detail journal service is the input for 
+
+ADL Journal loader and then it outputs the data into Cosmos unstructured streams 
+
+Then structured streams are generated and after that there's another ADF pipeline 
+
+which reads the structured streams and pushes the data to Data grid core storage and modern invoicing kusto  . 
+
+ 
+
+ADL journal reader is reading the invoicing events and document detail events from journal services 
+
+and putting the data in cosmos streams in raw format(json) 
+
+On top of the unstructured stream there are scope scripts running in azure data factory and they are  
+
+converting the unstructured streams to structured data format 
+
+ 
+
+After structured streams are generated, there is another ADF pipeline which actually 
+
+reads the structured streams and pushes the data to 
+
+Data grid core storage database as well as modern invoicing Kusto cluster 
+
+ 
+
+Airgap environment is one azure instance where data movement  
+
+outside and inside of the instance is controlled 
+
+These are specialized instance which are targeted for a few set of  
+
+customers 
+
+Suppose the global instances are not providing the security 
+
+practices needed for a client 
+
+So specialized azure instances called airgap instances are for 
+
+customers who want to transact on a secure environment 
+
+ 
+
+We have 2 airgap environments- US Sec and US Nat
