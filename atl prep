@@ -1,0 +1,743 @@
+System Design
+
+
+
+
+
+TEST
+
+Some test
+
+
+Atlassian:
+
+Round 4: Data Structures & Algorithm
+
+Points to be considered in this round
+•⁠  ⁠Write Clean code that can be extended for scale-ups (Make sure to not do significant code changes for scale-ups)
+•⁠  ⁠Provide optimal solution without asking help or hints
+•⁠  ⁠Discuss edge cases along with multiple approaches and their trade-offs to the solution
+•⁠  ⁠Discuss on test cases and keep in mind that hard coding the test cases are not scalable 
+
+
+1. Find the Closest Org for Target Employees
+    * Imagine you are the team that maintains the Atlassian employee directory. 
+    * At Atlassian - there are multiple groups, and each can have one or more groups. Every employee is part of a group.
+    * You are tasked with designing a system that could find the closest common parent group  given a target set of employees in the organization.
+
+* Requirement Gathering: (Ask the below questions & assumptions)
+	 Assumptions: (Ask for data classes for more clarity)
+        * a group node can have both employees and groups
+        * Do have employees shared across different groups 
+        * Do we  have 2 isolated trees in the company
+
+* Solution:
+    - Can be solved using DFS (talk about the use of recursion vs iterative and improve the performance of the code with caches or memoization)
+    - group/employee could be across 2 different groups thus the DFS will now become a DAG 
+    - Other options to solve can be use of BFS or Lowest Common Ancestors
+    - Talk about which of the approach will be more optimal
+
+    - Space Complexity: Space: O(n * m)
+    - Time Complexity: O(n(m+ k))
+        * ( n ) is the number of groups,
+        * ( m ) is the number of employees per group,
+        * ( k ) is the number of target employees.
+
+    - Test Cases:
+        * Single Group with All Employees
+        * Multiple Groups with Common Parent
+        * Empty Group Hierarchy or Empty Target Employees
+        * Non-existent employees. 
+
+    - Scale up:
+    1. The Atlassian hierarchy sometimes can have shared group across an org or employees shared across different groups - How will the code evolve in this case if the requirement is to provide ONE closest common group?
+    - The DFS now becomes DAG
+    - Find the multiple closest org groups (Below are a few options and talk about the trade-offs in the approach)
+        * Alphabetical ordering
+        * Ordering by size of the group
+        * Organizational Priority—What priority are they using here? If it's an insertion priority, how do they hold this information at scale? 
+        * Random selection/Multiple winners 
+    - Implications of the tree hierarchy becoming a DAG, i.e:
+        * complexity of traversal and
+        * performance/memory
+    - This is a tie-breaking situation, call out the implications of using non-deterministic approach such as randomness. (i.e: flaky tests, inconsistent behaviour of their service
+
+    - Space & Time Complexity for the above scale up:
+        * Tie-breaking : O(n) ( worst case )
+        * Space: O(nm)
+        * Time: O(n*m*k)
+
+    2. The system now introduced 4 methods to update the structure of the hierarchy in the org. Suppose these dynamic updates are done in separate threads while getCommonGroupForEmployees is being called, How will your system handled reads and writes into the system efficiently such that at any given time getCommonGroupForEmployees always reflects the latest updated state of the hierarchy ?
+        * How do you approach adding locks into the existing getCommonGroupForEmployees method and the new update methods? 
+            * You can implement a simple semaphore lock and write a test case for the same.
+            * Discuss on concurrency concepts
+    3.  Scale Down: Flatter Structure
+        * he company consists of a single level of groups with no subgroups. Each group has a set of employees.
+            * This is scaling down the problem from a tree with multiple levels to a single-level tree
+            * solve the base condition of the recursive call
+            * Further Assumptions
+                * Groups/Employees in the group are static and not shared. 
+
+
+
+2. Tennis court booking
+    * Implement a function that given a list of tennis court bookings with start and finish times, returns a plan assigning each booking to a specific court, ensuring each court is used by only one booking at a time and using the minimum amount of courts with unlimited number of courts available.
+    * An example of the booking record might look like
+        * class BookingRecord:
+        *   id: int // ID of the booking.
+        *   start_time: int
+        *   finish_time: int
+    * function is going to look like:
+        * List<Court> assignCourts(List<BookingRecord> bookingRecords)
+
+* Requirement Gathering: (Ask the below questions & assumptions)
+    * Returning an assignment of bookings is a must. This leads to other scale ups while finding the number of courts only leads to a scale down.
+    * The bookings can occur on multiple days. Therefore, start_time and finish_time can be considered as timestamps
+    * You have as many courts as you need.
+    * You can choose start/finish time are inclusive or exclusive (Usually inclusive of start and exclusive of finish are the easiest.)
+    * Assume the start and end time stamps are all in same time zone or UTC time
+    * Assume the input is valid such that start_time < finish_time.
+    * There’s no limit on how long a court can be booked for.
+    * The return type here will be Court
+    * Ex: class Court:
+        * id: int // ID of the court.
+        * bookings: List<BookingRecord>  // The list of bookings occupying this court.
+
+* Solution:
+    * The problem can be solved in multiple ways,
+        * Heap/PriorityQueue (use built in libraries and talk about their operations and their performance complexities) - Recommended Solution
+        * sorting start and end time - Alternate solution
+            * You can use doubly linked list or dequeue/queue for the above solution. 
+            * Talk in detail about the complexities around their add/remove operations
+            * Using array will impact the performance, explain why
+
+    * Optimal Solution: O(n log n)
+        * using priority queue/min heap with the booking finish time as the sort key and adding a new court if the peek item’s finish time is after the current booking’s start time.
+
+    - Scaling:
+        1. Time to maintain the court before next booking
+            * After each booking, a fixed amount of time, X, is needed to maintain the court before it can be rented again.
+            * Assume there is no limit on how many courts can be cleaned up simultaneously.
+            * If the you choose to mutate BookingRecord, keep in mind that it is immutable.
+            * The simplest approach is to amend the base case to compare the booking start time to the court finished time + cleaning time
+        2. Court only need maintenance after X amount of usage
+            * How would you modify the code if each court also had a Y maintenance time that occurred after X bookings?
+            * The function should now become something like:
+                * def assign_court_with_maintenance(booking_records: list[BookingRecord],
+maintenance_time: int,
+durability: int) -> list[Court]:
+
+            * you can choose to have a fixed Y and X for all the courts or each court having different X and Y (Propose this and not ask for hints)
+        3. Testing discussion extension
+            * how would you validate the output result is correct? (Answers below)
+                * Any overlapping bookings in each court?
+                * Any booking appeared in more than one court?
+                * Is the number of courts the minimum amount?
+        4. Only find the minimum number of courts needed
+            * The original problem can be made simpler by removing the “assigning each booking to a specific court” part.
+            * the optimal solution all involve sorting by the start_time and then either iterating through the records using pointers or priority queue.
+        5. Check if booking conflicts
+            * write a function that if given two bookings to check if they conflict with each other.
+            * boolean isBookingConflict(BookingRecord booking1, BookingRecord booking2);
+                * def is_booking_conflict(booking_record1: BookingRecord, booking_record2: BookingRecord):
+                * return not (booking_record1.start_time >= booking_record2.end_time or booking_record2.start_time >= booking_record1.end_time)
+
+
+
+3. Popular Content IDs
+    * Imagine you are given a stream of content ids along with an associated action to be performed on them.
+Example of contents are video, pages, posts etc. There can be two actions associated with a content id:
+        * increasePopularity → increases the popularity of the content by 1. The popularity increases when someone comments on the content or likes the content
+        * decreasePopularity → decreases the popularity of the content by 1. The popularity decreases when a spam bot's/users comments are deleted from the content or its likes are removed from the content
+        * content ids are positive integers
+    * Implement a class that can return the mostPopular content id at any time while consuming the stream of content ids and its associated action. If there are no contentIds with popularity greater than 0, return -1
+    * Sample snippet will be shared with you during the interview
+
+* Requirement Gathering:
+    * The snippet shared with you is not fully complete, ask the following clarification,
+        * mostPopular method might be called even without adding any content, return -1 in this case since content ids are always positive
+        * in case of a tie can I return any content id randomly with most popularity
+        * Edge case: Ensure that the popularity cannot be negative because the decreasePopularity will only be called if the increasePopularity was called for that content id in the past
+
+* Solution:
+    * use a map that stores the contentId as key and the popularity of the content as value, shown below in the HashMap<ContentId, Integer> contentIdToPopularity and a reverse sorted map that stores the popularity count as key to the list of content ids as values as represented below in the code solution, TreeMap<Integer, HashSet<ContentId>> popularityToContentIds
+        * increasePopularity just increments the count of the content id in the contentIdToPopularity map and stores the value in the reverse map. Since there can be multiple contents with the same popularity we store the content ids in a HashSet<ContentId>. Expected time complexity O(log N)
+        * mostPopular method returns the most popular content id from the popularityToContentIds map. Expected time complexity O(log N) since getting the first element in a TreeMap is O(log N)
+        * decreasePopularity should decrement the popularity of the content id and also change the popularity of content id in the popularityToContentIds. Expected time complexity O(log N)
+    * Alternate approach is to to use multi set data structure for popularityToContentIds
+        * HashMap<ContentId, Popularity> contentIdToPopularity;
+        * TreeMap<Popularity, Set<ContentId>> popularityToContentIds;
+    * Edge Cases:
+        * Check if you have covered all the corner cases, especially where increasePopularity(7), decreasePopularity(7), mostPopular() should return -1 this will be taken care if you have removed the key in the popularityToContentIds map with the use of cleanUpZeroPopularity
+            * Sample execution:
+                * (increasePopularity, 7),
+                * (increasePopularity, 7), 
+                * (increasePopularity, 8), 
+                * (mostPopular), // returns 7
+                * (decreasePopularity, 7),
+                * (decreasePopularity, 8),
+                * (mostPopular), // returns -1 since there is no content with popularity greater than 0
+            * Check if you have removed the content id with 0 popularity from the contentIdToPopularity map
+
+* Scaling:
+    1. Imagine you are to return the most popular contentId  and in case of a tie return contentId which was most recently added.
+        * You will be provided with a sample snippet
+        * You can easily achieve this by using a map and an extra variable that stores the most recently added most popular contentId
+    2. In continuation of the base question, we want to add the requirement that in case of a tie for the most popular content id return the most recently observed contentId
+        * Sample snippet will be shared
+        * You can achieve this by replacing the data structure in TreeMap<ContentId, HashSet<Integer>> contentIdToPopularity; to TreeMap<Integer, LinkedHashSet<ContentId>> popularityToContentIds;
+        * Next is to implement the data structure on your own,
+            * This can be achieved  by using a LRUCache data structure except without the evection (Using this will help to maintain order of elements, remove elements efficiently and add elements in order efficiently.
+    3. What if the whole data set doesn’t fit into one physical hardware
+            * Have N server boxes Have N server boxes behind a consistent hashing algorithm so that any request to increase or decrease the popularity of the contentId is always given to the same box. This way the content ids are not duplicated across boxes. Each box has it’s own version of the base solution implemented in it which can return the mostPopular content id.
+            * During the execution of mostPopular across the distributed architecture you need to fetch the most popular from each box and check which is the most popular globally.
+        * Adding more complexity:
+            * How would the system deal with failures if one of the boxes goes down? We may choose to replicate the data of each server on multiple boxes.
+            * Are there any trade-offs we can make to loose consistency over availability? What assumptions do you make?
+            * Are there any single points of failures? How can you avoid them?
+                * each server box should have a list of most up to date sorted list of most popular content ids, you can achieve this by flattening the popularityToContentIds map on each server. At the execution time of topK most popular we can feed the list from each box to a min heap and fetch the topK collated from multiple sources.
+
+
+
+4. Commodity Pricing
+    * Imagine you are given a stream of data points consisting of <timestamp, commodityPrice> you are supposed to return the maxCommodityPrice at any point in time.
+    * The timestamps in the stream can be out of order, or there can be duplicate timestamps, we need to update the commodityPrice at that particular timestamp if an entry for the timestamp already exists.
+    * Create an in-memory solution tailored to prioritize frequent reads and writes for the given problem statement.
+    * Sample snippet will be shared with you during the interview
+
+* Solution:
+    * This problem can be solved using two maps,
+        * first HashMap<Timestamp, CommodityPrice> timestampToPrice which stores the key as Timestamp and value as CommodityPrice
+        * second TreeMap<CommodityPrice, Set<Timestamp>> priceToTimestamps which stores the key as CommodityPrice and value as Set<Timestamp>. The Set<Timestamp> is used so that we can store the multiple timestamps with the same CommodityPrice
+    * During getMaxCommodityPrice, we need to retrieve the last entry from the map priceToTimestamps which will have the max price since priceToTimestamps is sorted on price as key.
+    * Time Complexity
+        * upsertCommodityPrice: O(log N) to modify values in priceToTimestamps
+        * getMaxCommodityPrice: O(log N) because the prices in priceToTimestamps are sorted and lastKey() method of map takes O(log N). 
+        * In other languages like C++ the value to the lastEntry is cached and can be accessed using map.rbeing() in O(1), so this varies from language to language.
+
+* Scaling:
+    1. Imagine you are given a stream of data points consisting of <timestamp, commodityPrice> you are supposed to return the price of the most recent timestamp, in other words the current price of the greatest timestamp recorded and also the current price at any timestamp.
+        * The timestamps in the stream can be out of order, or there can be duplicate timestamps, we need to update the commodityPrice at that particular timestamp if an entry for the timestamp already exists.
+        * Sample snippet will be shared with you
+        * You can achieve this by using a HashMap<Timestamp, Price> and keeping track of the most recent timestamp, or we can also use a TreeMap<Timestamp, Price> and get the last key since the keys are sorted in ascending order by default.
+        * Now add a new capability of deleting commodity price at a particular timestamp void deleteCommodityPrice(int timestamp)
+    2. Add a method int getCommodityPrice(int timestamp, int checkpoint) that provides a mechanism to manage and query commodity prices at specific timestamps, associating each update with a unique checkpoint identifier. It allows for tracking and retrieving historical commodity prices corresponding to different checkpoints.
+        * Every upsert operation is associated with a unique checkpoint, for more details let’s look at the sample code below
+        * Sample snippet will be shared with you
+        * You can modify the previous timestampToPrice map to HashMap<Timestamp, TreeMap<CheckpointId, CommodityPrice>> timestampToCheckpointPrice; which will store all the historical prices of the timestamp, the prices per timestamp are stored in increasing order of checkpoint id
+        * when the query is made to return the price of a timestamp at a particular checkpoint id you can get the price using the floorEntry() method which traverses the tree map to return the highest checkpoint which is lower than or equal to query checkpoint
+        * time complexity of getCommodityPrice is O(log N) because floorEntry() uses a modified version of binary search to get the first key <= query 
+        * Recommended Solution:
+            * to return a particular value before a checkpoint you can use MVCC(Multi Version Concurreny Control) in SQL databases. When there is long running query, to get a consistent view of the data it reads all the data that is versioned lower than the current transaction id(which is monotonically increasing)
+
+
+5. Weighted Graph
+    * Imagine we have a network with N nodes. Each node has a label (a name). Between two nodes, there is a value of time in milliseconds that indicates how long a packet can be transmitted from one node to the other. Be noted that this is one-way direction which means packet can be transmitted the other way around with different time value, or, even prohibited.
+    * Given 2 node labels (source and destination), write a function that answers the following questions:
+        * Can a packet transmit from the source node to the destination node?
+        * If yes, what is the shortest time that a packet can transmit from the source node to the destination node? 
+        * Sample graph will be shared during the discussion which will indicate the input/output
+
+*Requirement Gathering:
+    * maximum value for the size of the network (N)
+    * clarify if this is one-way or two-way connection between two nodes?
+
+*Solution:
+    * The 1st part of the question can be solved using a simple recursive search or “oil-spreading” algorithm
+    * The 2nd part of the question can be solved using Dijkstra’s algorithm -recommended ( https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm)  or Bellman–Ford algorithm (https://en.wikipedia.org/wiki/Bellman%E2%80%93Ford_algorithm)
+
+*Scaling:
+    * Build one bridge to allow packet transmission from the source to the destination
+        * Say if the packet cannot go from the source node to the destination node, update the previous solution to find one extra pair of nodes that need to be established so that packet can be transmitted from the source to the destination in the shortest time possible. Can you list all the nodes in the new shortest path? (from the source node to the destination node).
+        * Sample graph will be shown for example during the interview
+*Solution: 
+        * findShortestPath(source) should return an array of s: int[] where s[i] is the shortest time to go from source to node i
+        * findShortestPath(destination) should have an optional parameter to “flip” the direction of the test so we can get an array of d: int[]where d[i] is the shortest time to go from node i to the destination
+    * The final solution can be something like this:
+        * Calculate the shortest time from the source to all other nodes
+const s: int[] = findShortestPath(source)
+If s[destination] has a value, then great, we have the answer.
+        * If not, calculate the shortest time from all other nodes to destination.
+const d: int[] = findShortestPath(destination, backward = true)
+        * With all the pairs of [i, j] where s[i] and d[j] have values and the connection between them is allowed, find the pair with the smallest sum of s[i] + t[i,j] + d[j]
+
+
+6. Job Interval Reporting
+    * CI pipeline count
+        * Atlassian runs a lot of CI pipelines and our team is tasked to  build some reporting on the usage to find some cost optimisation patterns.
+        * Each CI pipeline starts at a given time X and ends at Y. We are given a list of CI pipeline time windows {X,Y}.
+        * [{X,Y}, {X`, Y`}, ….]
+    * Find the time windows where at least one CI pipeline is running.
+        *  Input: 
+[{2, 5}, {12, 15}, {4, 8}] 
+        * Output: [{2, 8}, {12, 15}] 
+Explanation: The windows in minimum where at least one job is running are {2, 8} and {12, 15}
+
+*Solution:
+    * Can be solved using List of array, array of array, List of object as their data structure.
+    * sort windows and then traverse them to merge it.
+        * sorting-based approach using start time to sort windows.
+        * consider more than two windows while merging
+        * Utilize sort and solve it in nlogn complexity instead of comparing one element with all other elements(n^2).
+    * Discuss the potential benefits of using an O(n log n) sorting algorithm followed by a linear scan.
+
+*Scaling:
+    1. Find window with at least two pipelines running in a given time window.
+        * solve merging of interval by considering time slots and end timeframe using sweep algorithm
+        * include end times while merging.
+    2. Find the busiest window/s where maximum number of pipelines are running?
+        * We wish to find out which window/s is most expensive for pipeline runs? Find out the time interval/s where most pipelines are running?
+            * Can be solved with various data structures and algorithms including but not limited to Priority Queue, Max/Min Heap.
+            * explain trade off between at least two Data structures that should be considered
+    3. Find overlapping window in given sorted inputs?
+        * We have reduced problem space where inputs are already sorted.
+            * write code to compare intervals using start and end time. 
+            * You can find overlapping interval by selecting biggest start time and smallest end time of the two.
+            * Write basic test cases to validate the algorithm (to find overlapping window in smaller two window problem)
+    4. Find overlapping window within two pipelines?
+        * Use divide and conquer and working on smallest possible problem set to reduce complexity of considering multiple windows
+            * write code to compare two intervals using start and end time
+            * find overlapping interval by selecting biggest start time and smallest end time of the two.
+
+
+
+**************************************************************************************LOW LEVEL DESIGN**************************************************************************************************************
+Round 5: Code Design - LLD
+
+General points to be considered during the LLD round
+1.⁠ ⁠All variable names and abstractions are clear and simple to understand
+2.⁠ ⁠Make use of a debugger to step through your code
+3.⁠ ⁠Write test cases when discussing edge cases and possible bugs in your code. 
+4.⁠ ⁠Use automated testing, typically following a TDD approach
+5.⁠ ⁠Describe your solution before getting started with the actual solutioning
+
+
+
+1. F1 Last Lap Hero
+    * Design and implement a program that accepts lap times for Formula 1 race drivers. Return the "Last Lap Hero" - the driver who had the biggest improvement on their last lap compared to their average lap time. 
+    * Example Race Scenario,
+Driver, 		Lap Time
+"Driver1”,		100
+"Driver2", 		90
+"Driver3", 		70
+"Driver1", 		110
+"Driver2", 		95
+"Driver3", 		50
+
+// Driver 1 Last Lap Gain = 110 - (100+110)/2 = 5
+// Driver 2 Last Lap Gain = 95 - (90+95)/2 = 2.5
+// Driver 3 Last Lap Gain = 50 - (70+50)/2 = -10
+// Driver 3 is last lap hero
+
+Solution:
+•⁠  ⁠Use the below functions
+    * void lapComplete(String driver, int lapTimeMs)
+    * String getLastLapHero()
+•⁠  ⁠You can measure the improvements by two ways
+        * measuring by seconds (last lap time - average lap time)
+        * percentage ((last - average) / average)
+        * Calculate all averages and Last Lap Hero when getLastLapHero() is called.Store total time, total laps and last lap time against each driver.
+        * To retrieve lap time and store it you can use whole number type like int or decimal along with small time scale like miliseconds and explain why you did not use a lossy type like float
+        * Use TDD approach since you be will scaling the solution in the next part of the problem
+        * Include methods related to LapStats in the record/class, for example
+            * getAverageLapTime and
+            * calculateLastLapGain.
+        * Choose int, longint, decimal or strong Java type like Duration for lap time and measuring in milliseconds to ensure exact storage of decimals.
+        * work through the sort. 
+            * Biggest Improvement = Biggest reduction in final lap (biggest improvement could be percentage or second-based, please discuss the merits of each)
+        * Add a check for laps>0 before calculating the average to avoid a divide by zero error.
+        * Be mindful of storage complexity, and store only total lap time, total laps and last lap time against each driver.
+        * Use a constant when initiating the Lap Stats to avoid creating a new empty object each time
+            * driverLaps.getOrDefault(driverId, DEFAULT_LAP_STATS)
+
+Scaling:
+1.⁠ ⁠Implement a system to handle Pit Stop Laps where a pit stop causes a longer lap time. Pit Stop Laps should be excluded from the average lap time calculation, but are a valid last lap.
+•⁠  ⁠Calculate the “Last Lap Hero” for both scenarios: including and excluding pit stops.
+•⁠  ⁠Example:
+Driver, Lap Time,		isPitStop
+"Driver1", 100,		false
+"Driver2", 80, 		true
+"Driver1", 120, 		true
+"Driver2", 100, 		false
+"Driver1", 130, 		false
+"Driver2", 100, 		false
+"Driver1", 110, 		false
+"Driver2", 90, 		true
+
+// Including pit stops
+    * // Driver 1 Last Lap Gain = 110 - (100+120+130+110)/4 = -5
+    * // Driver 2 Last Lap Gain = 90 - (80+100+100+90)/4 = -2.5
+    * // Driver 1 is last lap hero
+
+// Excluding pit stops
+    * // Driver 1 Last Lap Gain = 110 - (100+130+110)/3 = -3.333
+    * // Driver 2 Last Lap Gain = 90 - (100+100)/2 = -10
+    * // Driver 2 is last lap hero
+        * // Note Driver 2's last lap is a pit stop lap, so excluded from
+        * // the average, but still used for the Last Lap Hero calculation
+    * What if the last lap is a pit stop lap? Use the last lap time to compare with the average, but don’t include in the average.
+    * how much longer Pit Stops are?
+        * Modify lapComplete to add a isPitStop parameter
+        *  If no data is available on pit stops, dynamically calculating a pit stop lap from the lap time (though this is not a reliable indicator)
+        * Instead you can,
+            * Modify lapComplete to add a pitStopTaken parameter
+        * Use automated testing to ensure existing behaviour is not broken by changes
+        * Dynamically decide a pit stop lap using stats (for example, more than one standard deviation from a normal lap).
+            * Use a fixed time (eg longer than 120 seconds) to indicate a pit stop lap.
+            * Create a class to link a lap time with a pit stop indicator
+
+    2. Introduce telemetry to track and report every time the “Last Lap Hero” changes during a race.
+    * Use the Observer pattern (for example a callback to notify interested parties) or 
+    * Using a publisher/subscriber pattern
+        * Logging telemetry to STDOUT
+
+
+
+2. Deployment Notifications
+•⁠  ⁠You are working on a deployment notification service for keeping developers informed about when their changes have been deployed.
+•⁠  ⁠The service should provide two interfaces, one to receive an event and another to send out a batch of notifications for any received events. 
+    * An event contains a version number, a list of authors, and a status indicating if the deployment has started, completed, or failed.
+    * Deployment notifications should include the author and the version in which their changes were deployed.
+•⁠  ⁠The goal is to notify code change authors on the first time their changes are deployed successfully for each unique set of code changes.
+        * func handleEvent(...)
+        * func sendNotifications()
+
+* Requirement Gathering:
+    * Similar to main branch deployments, any subsequent version will contain the previous version changes. So if a deployment fails for v1, v2 will contain its changes as well.
+    * Each author should be notified individually for each deployment their changes are first deployed in. Meaning they may receive multiple deployment notifications when a batch of notifications is sent.
+    * assume that any failure or completion will be preceded by a start.
+    * Use classes like,
+        * DeploymentEvent and
+        * DeploymentNotification
+    * ask about edge cases, including orders, repeated events, and malformed input.
+    * ask about duplicate authors, possibly identifying opportunities for sets vs lists.
+    * discusses how loading computation tasks in different components of the service can relate to wider architecture or business needs. For example, if the sendNotifications() function is called infrequently and the developer generates their notification messages when the events are received, it would be wasteful as it is recalculated very often.
+
+* Scaling:
+    1. Some teams have noticed that when changes get reverted by a different author, the original author will still receive notifications when they no longer have any changes in the deployed version. To prevent these notifications, we want to add support for a revert deployment event type
+        * In the case where a revert occurs before the changes are deployed, we should prevent the notification going out to that author.
+    * Keep track of deployment versions as well as authors. The base problem may involve only keeping track of authors for failed deployments independent of their version, now you will need to be able to link these together in the case of reverting a failed deployment
+    * Talk about the below points and what their benefits would be,
+        * should you notify for reverts on deployments that had previously been successful 
+        * should you still notify when a successful deployment is reverted for which the author has yet to receive notification
+    * Identify different cases for reverting, for example, failed, previously successful and notified, and previously successful but not notified.
+    * migrate from a string representation of events to an enum to accommodate the scaling question
+
+    2. There is no longer any ordering guarantees on the deployment events.
+    * The main concern is about notifying authors of a change that fails to complete its deployment. Specifically, if v1 fails and v2 is successful, but we have only received the notification for v2, how will the authors of v1 be notified?
+    * To handle this you can use multiple strategies like, (pick one and talk through on how the given specific business environments, justifying your approach based on the trade-offs involved.)
+        * Immediate Notification with Available Information:
+            * Based on the events received so far, notify teams when sendNotifications() is called. If only v2's completion is known while v1 remains unreceived, notify v2's authors. If v1's failure arrives later and v3 succeeds, update and notify the authors of v1 about their changes being deployed in v3.
+            * This approach prioritizes immediate communication with available data, accepting that some notifications might initially miss context.
+        * Deferred Notification with Backtracking:
+            * A more complex approach involves tracking missed deployment events. Upon receiving each event, keep a record and assess if any prior missing versions can now be accounted for. For instance, if v2 is notified without v1's status, and later v1's failure is received, determine if v1's authors should now be notified about v2. 
+            * This approach is more complex but allows you to notify about deployments with a wider context window by keeping track of the earliest successful deployment when a prior one is still unknown without needing the full history.
+        * Complete Information Before Notification:
+            * defer notifications until a clear picture of all deployments is available. Only notify once all relevant events (failures or completions) for the known versions are received. For example, if v1 and v2 are complete but v3 is missing, hold off on notifying v4 until v3's status is known. 
+            * This ensures that notifications reflect the complete deployment context, though it may delay communication.
+
+3.⁠ ⁠Only started and completed events can occur, deployments cannot fail.
+    * correctly store the version and author information as it comes in from the deployment events
+    * Use of map or list to collect information to produce notifications, possibly identifying that you only need to be concerned with the success messages.
+    * implement the notification method, correctly producing notification alerts for the correct number of authors.
+    * Repeated calls to the notification method should not result in repeated notifications, so you should be sure to clear any pending notifications after each call.
+
+
+
+3. Customer Satisfaction:
+•⁠  ⁠Imagine we have a customer support ticketing system. The system allows customers to rate the support agent out of 5. To start with, write a function which accepts a rating, and another which will get all of the agents and the average rating each one has received, ordered highest to lowest.
+•⁠  ⁠Below function can be used
+    * void giveRating(String agentName, int rating)
+    * List<Agent> getRatings()
+
+* Requirement Gathering
+    * It is not necessary to store every rating, and adds unnecessarily memory complexity to do so
+    * You only need the total and a count
+    * Consider also at what point the average calculation is performed - it does not need to be done until the results are fetched
+    * Ask how agents should be identified (eg by name or some kind of identifier
+    * consider that each reply should only be rated once and try to identify a rating based on the reply
+    * rating range could change (eg to 1-3 or 1-10) and pre-empting this is good signal for writing code that is ready to change.
+
+* Scaling:
+    1. Currently your solution does not account for what happens if two agents have the same average rating
+        * What options are there for handling ties and how can we implement that in code?
+        * Some strategies to handle ties,
+            * Total score
+            * Median score, if it is different to the mean
+            * Number of ratings
+            * Alphabetically by agent name
+        * Actively call out any changes to time/memory complexity, or previous decisions made, that is caused by your changes
+
+    2. This implementation works great for me to see who the best agents are overall, but now I want to be able to see who the best agents are each month. Change the implementation so I can get that information.
+        * There are two ways to approach this:
+            * You could make it so a report can be generated for any given time range, but this requires storing the time of each rating (ie a sliding timeframe)
+            * You could keep storing just the total and count, but make it per month (ie a fixed timeframe)
+            * Introducing time adds some complexity to how to test the code
+            * You can solve this by introducing a service which can be mocked, or by passing the time into the function to give a rating
+            * Discuss various options of about implementing time window and their trade-offs
+            * Give consideration that the time interval may change (eg the question specifies “month” but it could change to “week”)
+
+    3. I now want to be able to chart the ratings over time. Write a new function that will allow me to export of each agent’s average ratings per month. You can export in any format you like - for example csv, json, or xml.
+        * the best option for the problem (wanting to chart it) is probably csv.
+        * For the data to be useful, you have to fill in a value for every column, even if that agent received no ratings for that time interval.
+        * Recognise that there may be rows missing (eg no ratings for a particular month) and this needs to be accounted for in the output in order to chart the ratings over time.
+
+
+
+4. Cinema Screenings
+•⁠  ⁠Let’s pretend we are in charge of a cinema. We want to figure out whether a new movie can be added to the existing schedule without removing any of the current movies.
+•⁠  ⁠Note that:
+    * the cinema opens at 10:00
+    * the last possible end time for a movie is 23:00
+    * movie durations include setting up the room before the movie begins and cleaning it up afterward. In other words, if for example a movie ends at 14:00, the next movie can start at 14:00
+    * movie start times are expressed in minutes starting from midnight, so for example, 10am would be 10*60 = 600
+    * The inputs will be shared by the interviewer
+    * Given a new movie, we want to know whether it can be added to the current schedule.
+    * Example method signature:
+        * boolean canSchedule(Movie movie, MovieSchedule schedule);
+    * Edge Cases:
+        * Empty schedule
+        * Schedule with one movie only
+        * Movie longer than 13 hours
+
+* Solution:
+    * This can be solved using either of the approach,
+        * iterating through movies and checking whether the current movie fits between the end of the previous movie and the start of the next one or
+        * create a list of “time gaps” then checking whether the movie fits into any of those
+    * represent the objects (Movie, Screening, MovieSchedule) in a sensible way
+    * Do you care about readability? For example, the base question has some edge cases (scheduling the movie as first/last), do you care about handling them properly?
+    * Is the loop/stream in the base solution written clearly, with proper variable names, avoiding huge if statements?
+
+* Scaling:
+    1. Total expected revenue
+    * Let’s add expected revenue per screening to each movie.
+    * Sample input will be shared by the interviewer
+    * calculate the total expected revenue for a day.
+    * Example method signature:
+        * int totalRevenue(MovieSchedule schedule);
+    * When adding revenue to movies, you can quickly add this to the movie class
+
+    2. Insert a new screening into a full schedule (proactively ask what a full schedule means)
+    * You have a full schedule and a new movie. You want to add one screening of the new movie in the schedule. Which existing screening are you removing?
+    * Example method signature:
+        * Screening planScreening(Movie newMovie, MovieSchedule schedule);
+    * The goal is to maximise earnings
+    * Edge Cases:
+        * not all screenings of a movie, when removed, would leave a gap large enough for the new movie?
+        * no screening at all, of any movie, would leave a gap large enough when removed (in this case, can return null)
+        * think of re-using canSchedule() while implementing planScreening() or
+        * You can re-implement it inline
+        * Remove the movie that has the least revenue
+
+    3. Multiple rooms
+    * The cinema now has more than one room. How does this affect the design of the solution? Keep in mind that when adding a new movie to the schedule, we want to maximise earnings.
+        * Use or update already implemented classes and not rewrite from the scratch
+            * Example:
+	public record Cinema(Room ... rooms) {
+	}
+	public record Room(MovieSchedule 		schedule) {
+	}
+        * Use previously implemented methods to code
+            * Example:
+		boolean canSchedule(Movie movie,
+		Cinema cinema) {
+   		return Arrays.stream(cinema.rooms())
+           .map(Room::schedule)
+           .anyMatch(schedule ->
+		canSchedule(movie, schedule));
+		}
+        * Similarly, 
+		planScreening(Movie newMovie, Cinema cinema)
+can be re-used of the previously implemented
+		planScreening(Movie newMovie,
+MovieSchedule schedule) method
+
+
+
+5. Middleware Router (Example Question: https://medium.com/@choudharys710/lld-machine-coding-with-implementation-url-router-2f1ed481d132)
+•⁠  ⁠We want to implement a middleware router for our web service, which based on the path returns different strings (the string would represent “functions to invoke” in a real application).
+•⁠  ⁠Our interface for the router looks something like: (Sample interface will be shared during the interview)
+•⁠  ⁠The important part is that your router has a way to declare routes, and then act upon a path.
+
+* Requirement Gathering:
+    * You can appropriately select a simple data structure to represent their mappings. Generally this is a map of some variety of paths → functions.
+    * Implementing a simple constructor / builder + lookup.
+    * Edge Case:
+        * typical amount of registered routes
+        * what to do when they conflict
+        * Write good tests that exercise the domain of the problem
+        * trade offs of approaches (e.g. regex vs trees) and justify the rationale behind your choices
+
+* Scaling:
+1. Wildcards using ordered checking
+•⁠  ⁠Extend the route declarations such that we can have wildcards in the paths.
+		Router router = Router()
+		router.addRoute("/foo", "foo")
+		router.addRoute("/bar/*/baz", "bar")
+•⁠  ⁠Discuss about what limits should / could be placed on the patterns (just wildcards? Should it match /, etc)
+•⁠  ⁠what to do if a conflict occurs due to the wildcards (e.g. /foo/baz and /foo/*)
+* Solution: 
+    * The more performant option here would be to use a tree structure
+    * It maps less well to arbitrary patterns, but is faster for the simple wildcards within / patterns.
+
+2. Path Parameters
+•⁠  ⁠Implement the ability to add arguments to the handlers via path parameters
+•⁠  ⁠Example:
+	Router router = Router()
+	router.addRoute("/foo/{id}", "foo")
+	router.addRoute("/bar", "bar")
+  
+	fun callRoute(path: String) : (String, List<String>) {
+	// Returns the route result + the path params
+	  return router.callRoute(path)
+		}
+•⁠  ⁠You can “reuse” the pattern matching in the previous scale up and simply add to it’s implementation
+
+3. Scale down: Hardcoded
+•⁠  ⁠Instead of allowing it to be a fluent builder, allow hardcoded paths which return the value (so basically literally just a switch statement for route)
+
+
+
+6. Game of Snake (Example Question: https://www.geeksforgeeks.org/advance-java/design-snake-game/)
+•⁠  ⁠The snake can move up, down, left or right in a 2-dimensional board of arbitrary size.Let’s try to implement the base logic of this game.
+•⁠  ⁠Rules:
+    * Every time moveSnake() is called, the snake moves up, down, left or right
+    * The snake’s initial size is 3 and grows by 1 every 5 moves
+    * The game ends when the snake hits itself
+    * use the following as a starting point (pseudo-code)
+		interface SnakeGame {
+		moveSnake(snakeDirection);
+		isGameOver();
+		}
+
+* Solution:
+    * A list of positions representing the snake is all that’s required to solve this problem.
+    * The snake grows by not having its tail cut off during a move; for 1 turn, we don’t “cut the tail”
+
+* Scaling:
+    * Scale Up:
+        1. the snake now makes a move every second. So, for example, if we call setDirection(right), the snake will move to the right every second until we change the direction again.
+            * It’s not actually necessary to update the snake every second. You only need to update it when setDirection() or isGameOver() are called.
+        2. How can we ensure SnakeGame can be rendered in parallel to running the gameplay logic?
+            * “Rendering” can simply be about printing the snake positions and points X times per second
+            * The renderer now needs access to some data that is internal to SnakeGame, talk about how considering the render() and setDirection() are called by different threads?
+        3. the snake grows when it eats food, rather than every 5 moves
+            * Food is dropped at a random position on the board. 
+            * Guidelines:
+                * Food can only be dropped on “free” locations, cannot be dropped on the snake or on top of other food
+                * Food only disappears when eaten
+                * A new food item is dropped on the board every X seconds/moves
+                * food disappears after Y seconds/moves if not eaten
+            * This adds some complexity:
+                * need to store food locations (can be done using a list, but faster to use a map)
+                * how to handle random food drops? note that food cannot be dropped on the snake or on top of other food
+                * need to clean-up food locations (because food expires after Y seconds - how do you store the expiration time?
+
+    * Scale Down:
+    * We can remove some requirements:
+        * The snake doesn’t grow
+        * Snake only moves right
+        * Game over if the snake hits a wall
+
+
+
+7. Cost Explorer:
+•⁠  ⁠Your task is to develop a CostExplorer that calculates the total cost a customer has to pay in a unit year. This means that at any day of the year they should be able to get a provisional report giving monthly/yearly cost estimates.
+•⁠  ⁠The Cost Explorer should be able to provide a report of -
+    * Monthly cost (Generate a bill for each month, including bill amount for future months for the unit year)
+    * Yearly cost estimates (for the unit year)
+•⁠  ⁠Example:
+	CostExplorer ->
+		monthlyCostList(): Array/List of size 12 filled
+		with cost incurred in each month of the unit		year
+  		annualCost(): Total cost in a unit year
+•⁠  ⁠Unit year - refers to a calculation unit of year here, it can be Jan-Dec, Apr-Mar, July-June anything that candidate decides as a unit.
+•⁠  ⁠monthlyCostList is an array of size 12
+•⁠  ⁠Level 0: Multiple Plans for a Product
+    * You are working with other teams who provide you the following requirements,
+    1. Atlassian pricing plans
+        * To keep it simple, we're keeping one pricing for each product, in reality we'll have multiple pricing plan
+    2. Customer subscription information
+        * Initially the problem only expects one product in the list, but during scale-ups we can add multiple products into the mix
+
+	Sample:
+		//  Atlassian pricing plans as tuple of {planId, monthlyCost}
+		[
+		 {BASIC, 9.99},
+ 		 {STANDARD, 49.99}, 
+  		{PREMIUM, 249.99}
+		]
+
+		//  Customer subscription information
+		Customer -> C1
+		Product -> 
+		Name -> Jira
+		Subscription -> [ BASIC, "2022-03-10”  ] //{ planId, startDate }, date in YYYY-MM-DD format
+
+* Solution:
+    * Create your own data structure for Plan
+    * Can be solved using a static map of product pricing and calculates final cost by mapping planId across pricingPlans from customerProductPayload
+    * if a customer subscribes in middle of the year for any particular product. Say in the month of July
+        * Solution expected would be a linear time here 
+    * What happens if the customer subscribes in the middle of the month on a particular day in YYYY-DD-MM format?
+        * Solution: string split algorithm over the dateString to find dayOfMonth, monthOfYear
+    * Sample tests:
+        * No plans or no product supplied
+        * Null ids
+        * Negative cost handling
+        * Month bounds 1<=months<=12
+        * For base case monthlyCost (throughout the year) is same
+
+* Scaling:
+    * Scaling Down
+    * Level -1: Single product single pricing plan
+    * This scenario removes the complexity of dealing with plan type matrix and only deals with multiple product catalogs all on single plan, say Pricing Plan B. Simple implementation of this scenario could be,
+
+		fun calculateCost(): CostExplorerReport {
+  		  var monthlyCostList = List(12
+		{ pricingPlan.monthlyCost }
+    		return CostExplorerReport(
+        	monthlyCostList.map { String.format("%.2f", it) },
+        	String.format("$%.2f", monthlyCostList.sum())
+    		)
+		}
+
+    * Scale Up
+    * Level +1: Trial Subscriptions
+        * Introduce trial plans along with a trial period (remaining # of days)
+			//  Updated Pricing including trail plan as tuple of {planId, monthlyCost}
+			[
+ 			 {TRIAL, 0},
+  			{BASIC, 9.99},
+ 			{STANDARD, 49.99}, 
+  			{PREMIUM, 249.99}
+			]
+    * IF product.subscription.planId == “trial” THEN endDate and planAfterTrial info WILL be present in the payload.
+    * A year can be either a fixed window or it can be calculated 1 year from the date of subscription. 
+        * In the real world, a fixed window is expected (Jan - Dec, or FY21-22), this helps with annual budgeting and planning.
+        * A good solution will try and introduce different cost calculators where monthly cost can be calculated based on plan and duration. So for a trial plan you can have a calculator1 and regular can be say calculator2 and you may have a strategy pattern to pick the calculators. Calculator itself can be Singleton
+        * Say a customer subscription ends after 2 months 5 days in the given year/window then (assuming 30 days in a month)  a potential solution could be,
+
+			monthlyCostList = [ 0, 0, (5 monthlyCost) * 30 , monthlyCost, .., .., .., … ]
+			annualCost = monthlyCostList.sum()
+
+    * Level +2: Subscribe to multiple products
+        * Atlassian has other products as well and customer decides to subscribe to them as well. Assume product pricing to be the SAME across products. This means we can reuse previous pricing plans and update Customer subscription information
+        * endDate is Optional if not specified, it continues into the next year. This means we calculate annual cost assuming the payment until the end of the year.
+        * We now expect CostExplorer to generate 3 reports
+            1. Monthly cost (Generate a monthly bill)
+            2. Yearly cost estimates
+            3. Yearly cost per product
+        * To perform this you will need to refactor the code
+
+    * Level +3: Discount deals
+        * Your organization decided to run discounts throughout the year to boost customer footprint. Each product can have different discount codes.
+        * How will CostExplorer evolve now?
+            1. Usually a percentage (%) deals are a good starting point. This information is intentionally left out to check if candidates pick on it. If not they’ll probably pick it up with a hint.
+            2. Applying discounts DO NOT change the pricing plans in any way. Only the cost calculation changes. 
+            3. Customers can still subscribe for new products with trial periods, in which case discounts won’t apply.
+            4. Discount codes can be only applied if you’re not in trial period 
+        * Solution
+            * Discounts can be thought of as a generalization whereas trial subscriptions can be a specialization. 
+            * Both of them have a start/end date (in case of discount it’ll be the remaining window). Both of them have to calculate cost differently for a the specified period. (In case of trials, this cost is 0.0)
+
