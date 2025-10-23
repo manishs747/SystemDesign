@@ -1,0 +1,390 @@
+High-level architecture (mapping to your Microsoft Postbill work)
+
+Components and dataflows:
+
+Prebill Producer (upstream)
+
+Produces unbilled line-item events to a Kafka topic (per customer type / per schedule). Each message contains: invoiceId, lineItemId, customerId, subscriptionId, amount, metadata, eventType (e.g., LINE_ITEM, FLUSH), sequenceNo, producerTimestamp.
+
+Kafka (ingest layer)
+
+Topic(s) with N partitions. Keying strategy is important (see below). Consumers use consumer groups to scale.
+
+Postbill Consumer(s)
+
+Consume events, persist line items into MySQL (sharded by invoiceId at application layer). Each consumer writes a checkpoint (for offset) into checkpoint table after a batch is successfully stored.
+
+Checkpoint table
+
+Tracks Kafka offsets / partitions / producer metadata / last processed sequence. Also used to coordinate idempotency and resume after failures.
+
+WorkItem table (task queue in MySQL)
+
+When prebill sends a FLUSH for an invoice, Postbill creates a workitem row for that invoice (one row per invoice). Columns: workitemId, invoiceId, status (PENDING|LOCKED|IN_PROGRESS|COMPLETED|FAILED), priority, createdAt, lockedBy, lockExpiry, version, shardHint, sizeHint (line item count), processorType.
+
+Processor(s) — state machine workers
+
+Workers pick workitems (lock them), run the invoice lifecycle state machine (multiple states/DB ops per state), enrich data (HTTP template calls), generate PDF/XML and store into blob storage, then publish completion events to Event Hub (or Kafka). For huge invoices, a Spark job may be triggered instead of the normal processor (see below).
+
+Blob storage + downstream
+
+Completed documents persisted; finance, email and portal read from blob or get notified via events.
+
+Orchestration & Observability
+
+Orchestrator (Airflow/Orchestration service) to trigger Spark jobs, retries, and visibility. Metrics, tracing and alerts.
+
+Key non-functional goals / constraints
+
+Correctness — no lost or duplicated line items; invoice must be complete before generating invoice doc.
+
+Ordering / grouping — all line items for a given invoice must be aggregated before finalization.
+
+Scalability — handle many invoices and occasional huge invoices (millions of line items).
+
+Availability & latency — typical invoices finished within SLA; large invoices take specialized processing path.
+
+Idempotency & retries — processors must be idempotent; safe restart.
+
+Detailed design choices and rationale
+1) Checkpoint / lock semantics — ensure only one processor picks a single task
+
+We need a robust way that only one worker processes a workitem row at a time and to avoid races.
+
+Recommended approaches (in order of simplicity → robustness):
+
+A. Atomic UPDATE (compare-and-swap) — preferred for MySQL-backed workitem queue
+
+-- pick one PENDING workitem (highest priority first), atomically lock it
+UPDATE workitem
+SET status='LOCKED', lockedBy='processor-123', lockExpiry=NOW() + INTERVAL 2 MINUTE, version = version + 1
+WHERE workitemId = (
+    SELECT workitemId FROM (
+        SELECT workitemId FROM workitem
+        WHERE status='PENDING'
+        ORDER BY priority DESC, createdAt ASC
+        LIMIT 1
+    ) AS t
+)
+AND status='PENDING';
+
+
+Then check ROW_COUNT() (or rows affected). If 1 → lock succeeded. This avoids explicit DB locks and is simple to implement. Use lockExpiry to handle worker crashes (periodic lease renewal).
+
+B. SELECT ... FOR UPDATE within a short transaction
+
+START TRANSACTION;
+SELECT * FROM workitem
+WHERE status='PENDING'
+ORDER BY priority DESC, createdAt ASC
+LIMIT 1
+FOR UPDATE;
+-- If a row returned, update status to LOCKED and COMMIT
+UPDATE workitem SET status='LOCKED', lockedBy='processor-123', lockExpiry = NOW() + INTERVAL 2 MINUTE WHERE workitemId=?;
+COMMIT;
+
+
+This holds row locks briefly; good when contention is low.
+
+C. Leases via distributed lock store (Redis / Zookeeper / Consul)
+
+Use SET key value NX PX <lease-ms> in Redis. Key = workitem:<id>. If set succeeds, you own the workitem. Renew lease periodically.
+
+Pros: fast, good for many workers; Cons: operational dependency.
+
+D. MySQL GET_LOCK (advisory lock) — SELECT GET_LOCK('invoice_123', 0)
+
+Works but can be coarse-grained and harder to reason about across shards.
+
+Recommended interview answer: Use atomic update/compare-and-swap on status + lockedBy + lockExpiry. Explain lease renewal and how to reclaim expired locks. Show SQL sample (above). Mention fallback like Redis lease when you need extreme throughput.
+
+Edge cases: worker crash → lockExpiry triggers reclamation; duplicated attempts — processors must check version and re-validate idempotency.
+
+2) Handling invoice priority
+
+Multiple options — all rely on storing priority in workitem and making scheduling respect it.
+
+Design patterns:
+
+Priority column + ordered selection — ORDER BY priority DESC, createdAt ASC while selecting PENDING tasks. Simple and works when DB selection is cheap.
+
+Separate priority queues / processor pools — maintain separate workers for HIGH, MEDIUM, LOW:
+
+high_priority_processors poll for priority >= X.
+
+These workers have reserved capacity and can preempt lower-priority work by stealing lower-priority tasks if idle.
+
+Weighted fair scheduling — choose tasks by a weighted algorithm so high priority gets more share.
+
+Preemptive locking — when a HIGH priority job arrives: 1) create HIGH priority workitem; 2) notify processors (or orchestrator) to scale up high-priority workers; 3) optionally cancel long-running low priority tasks (if safe to resume mid-state) by putting them in PAUSED state and re-queuing later.
+
+Implementation tips
+
+Add priority and preemptible flags to workitem.
+
+Use separate database indices to make polling by priority efficient.
+
+Use a fast path: small invoices and high-priority ones go to normal processors; huge invoices flagged LARGE go to Spark path.
+
+Interview answer short: Put priority on workitem, order selection by priority and createdAt. For stricter guarantees, maintain dedicated high-priority worker pool and option to preempt/evict lower-priority tasks.
+
+3) Handling very large invoices (millions of line items) — use Spark?
+
+Yes — use a separate distributed processing pipeline (Spark or Flink) for heavy invoices. Outline:
+
+Triggering path
+
+When prebill flush arrives, we inspect sizeHint (line item count) OR estimate via prebill metadata. If > THRESHOLD (e.g., 100k lines) mark workitem.processorType='BATCH_SPARK' and create orchestration job rather than letting regular processor pick it.
+
+Spark job design
+
+Input: Read line items from the data store:
+
+Option A: Read from sharded MySQL via JDBC in parallel (not ideal for millions).
+
+Option B (preferred): Prebill writes raw line items to a blob staging location (parquet/avro files) or to a Kafka topic; Spark reads from blob/Kafka.
+
+Option C: Emit a "large invoice ready" event pointing to an object path that contains all lines.
+
+Partitioning: Spark partitions by lineItemId or hash(invoiceId, lineItemIdChunk) so processing is parallel across executors.
+
+Processing:
+
+Perform map/reduce aggregations, business rules, subtotals per subscription etc.
+
+Use combiners/aggregations locally to reduce shuffle.
+
+Partial results:
+
+Write partial aggregates and checkpoints to blob store or a results table.
+
+Merge:
+
+A final aggregation job merges partials into the canonical invoice representation.
+
+State transition:
+
+When final merge finished, mark workitem as COMPLETED or transition to next state (e.g., FINALIZED).
+
+PDF generation:
+
+Generating a single PDF with millions of lines might be impractical. Options:
+
+Produce a compressed PDF with paginated content split into segments (e.g., multi-part documents stored as separate blobs and an index file).
+
+Produce a summarized invoice with a separate line-item attachment (CSV/Parquet) stored in blob storage and linked from invoice.
+
+For PDF generation at scale: Spark can produce intermediate HTML/templated pages in parallel, then a merging step produces a final PDF (but heavy — often better to produce multiple files and a manifest).
+
+Idempotency & correctness
+
+Use deterministic partition map and unique message ids for idempotent writes.
+
+Use transactional writes where possible (or write to temp path then atomically rename).
+
+Keep a job checkpoint/state to resume on failure.
+
+Orchestration
+
+Use Airflow / Azure Data Factory or a job manager to submit Spark job on HDInsight/Databricks/Azure Synapse.
+
+Track job progress in workitem table: processorType='SPARK', sparkJobId, status, progress.
+
+Interview answer short: Use Spark for large invoices — split invoice into chunks, process in parallel, aggregate partials, then merge and finalize. Prefer blob staging (parquet) over hitting MySQL for millions of rows.
+
+4) Scaling Kafka consumption and processors
+
+Kafka consumption scaling
+
+Increase partitions on the topic — consumers in a group scale up to number of partitions. (One consumer instance per partition).
+
+Stateless consumer design — make consumers fast at ingest: do minimal validation, write raw line items to DB or blob quickly, commit offsets only after durable writes.
+
+Batching:
+
+Use max.poll.records and larger fetch.min.bytes/fetch.max.wait.ms to reduce overhead and increase throughput.
+
+Batch DB writes (multi-row INSERTs) and use bulk inserts to MySQL (or write to staging files).
+
+Commit offsets only after batch persisted — use manual commit for atomicity.
+
+Backpressure handling:
+
+If DB is slow, temporarily increase consumer instances or slow down consumption via pause/resume.
+
+Autoscaling:
+
+For bursts, autoscale consumer group instances (K8s pods) up to partition count.
+
+Producer-side throttling:
+
+If bursts are upstream, ask prebill team to shape traffic or use a buffering topic.
+
+Processor scaling
+
+Horizontal scale: run many stateless processor instances (workers). Use workitem table as queue for coordination.
+
+Sharding: route invoices to processors by shardHint (e.g., hash(invoiceId) mod N) to allow data locality where DB shards exist.
+
+Worker pools per task type: regular processors vs. pdf generators vs. spark drivers.
+
+Asynchronous stages: separate state machine stages into separate queues so different stages can scale independently (e.g., enrichment stage vs PDF stage).
+
+Resource autoscaling in K8s based on queue depth (rows in workitem with PENDING), CPU, or custom lag metrics.
+
+Operational considerations
+
+Monitor consumer lag (kafka-consumer-groups --describe) and DB queue depth.
+
+Maintain SLOs and alerts for lag spikes.
+
+Kafka partitioning and “all line items go to same partition”
+
+You asked how to guarantee all line items for an invoice go to the same Kafka partition — and what to do if invoice is very big.
+
+Guarantee same partition: choose the Kafka message key to be invoiceId (or stable hash of invoiceId). Kafka hashes key and routes to one partition => order for that key guaranteed inside that partition.
+
+Problem: If invoice has millions of messages, that single partition becomes a hotspot — it’s processed by one consumer at a time → throughput bottleneck.
+
+Solutions:
+
+Single Partition but post-aggregate (simple, may not scale):
+
+All lines go to same partition so ordering preserved. Consumer receives the stream and persists lines. For very large invoices this is slow.
+
+Shard invoice across multiple partitions + aggregator
+
+Producer uses composite key invoiceId:shard where shard = hash(lineItemId) % k. Then:
+
+Line items are distributed across k partitions → processed in parallel by multiple consumers.
+
+Use a stateful aggregator (Kafka Streams / Flink / Spark Streaming) to collect partial results keyed by invoiceId and produce final aggregated output when all shards complete.
+
+Need metadata that indicates how many shards were produced (e.g., numShards). The aggregator must know when all shards are done — a final FLUSH event with shard counts or use watermarking/timeouts.
+
+This is a common pattern for high-volume keys.
+
+Use a hybrid approach — small invoices to single-partition key; large invoices flagged and their line items written with shard key and to a large-invoice topic with more partitions.
+
+Write-line-items-to-blob-first — instead of pushing millions of line items into Kafka, upstream writes a compressed-avro/parquet blob with the invoice lines and publishes a single Kafka message pointing to that blob. Then consumers process the blob in distributed jobs (Spark). This avoids Kafka hotspots entirely.
+
+Interview answer short: Use invoiceId as Kafka key for ordering; for heavy invoices, shard by invoiceId:shard and run an aggregator or use blob staging with a single pointer message.
+
+Batching consumption for burst handling
+
+Yes — batching is essential.
+
+Consumer batching techniques:
+
+Set max.poll.records to a large value appropriate for consumer resources.
+
+Use fetch.min.bytes and fetch.max.wait.ms to allow brokers to batch.
+
+In consumer app: accumulate messages into an in-memory batch, write into DB with bulk INSERTs or write to a staging file (parquet) and commit offsets only after durable write.
+
+Use asynchronous processing: consumer thread writes to a local queue (e.g., ring buffer or Kafka client buffer) and a pool of worker threads performs DB writes.
+
+Tradeoff: larger batches increase throughput but increase end-to-end latency for individual messages.
+
+Backpressure / flow control: pause consumption when DB backlog grows or when number of outstanding batches exceeds threshold.
+
+Idempotency and exactly-once concerns
+
+Idempotent writes: include invoiceId + lineItemId unique constraint in DB so duplicate events are ignored.
+
+Outbox pattern or transactional writes: ensure that when you persist line items and update checkpoint you do it atomically. If DB cannot do cross-system transaction with Kafka, use outbox table pattern and Kafka Connect to produce event reliably.
+
+Kafka transactions: if your platform supports it, use Kafka Transactions + idempotent producers to attain end-to-end exactly-once semantics (complex).
+
+Concrete examples / SQL and pseudo-code
+
+Atomic lock sample (pseudo-code):
+
+function pickWorkitem(processorId):
+    sql = """
+    UPDATE workitem
+    SET status='LOCKED', lockedBy=?, lockExpiry=NOW()+INTERVAL 2 MINUTE, version = version + 1
+    WHERE workitemId = (
+      SELECT workitemId FROM (
+         SELECT workitemId FROM workitem
+         WHERE status='PENDING'
+         ORDER BY priority DESC, createdAt ASC
+         LIMIT 1
+      ) t
+    )
+    AND status='PENDING'
+    """
+    rows = run_sql(sql, [processorId])
+    if rows == 1:
+        return fetchLockedWorkitem()
+    else:
+        return null
+
+
+Idempotent insert for line items:
+
+INSERT INTO invoice_line_item (invoiceId, lineItemId, data, createdAt)
+VALUES (?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE data = VALUES(data);  -- safe idempotent upsert
+
+
+Detect large invoice and submit Spark job (pseudo):
+
+if lineItemCount > LARGE_THRESHOLD:
+    create workitem with processorType='SPARK', status='SCHEDULED'
+    orchestrator.submitSparkJob(workitemId, blobPath)
+else:
+    create normal workitem
+
+Other likely interview questions & good answers
+
+Q: How do you ensure consistency between MySQL and Kafka offsets?
+A: Use a two-phase approach — write data and outbox row in same DB transaction, and have a reliable connector or Kafka transaction to publish. Or use an atomic offset store (consumer commits offset in checkpoint table after successful DB write). For perfect atomicity consider Kafka transactions or transactional outbox pattern.
+
+Q: How do you handle processor crashes mid-state?
+A: Use state persisted per state (checkpointing state machine progress in DB), versioning and idempotent operations. When worker restarts, it reverts to last committed state and replays remaining operations or resumes.
+
+Q: What if the blob storage becomes a bottleneck for PDF writes?
+A: Use parallel writes to blob, chunked uploads, and CDN for downloads. Also generate manifest + multiple blobs for very large invoices.
+
+Q: How to handle schema evolution for line items?
+A: Use schema registry, Avro/Protobuf with backward/forward compatibility, validate at producer, versioned processors.
+
+Q: How do you test and QA such a system?
+A: Unit tests for processors, integration tests against local Kafka/MySQL, chaos tests (killer scripts that kill workers), load tests with synthetic large invoices, and end-to-end regression tests including Spark jobs.
+
+Q: What security measures are needed?
+A: Encrypt PII in transit and at rest, RBAC for processing services, TLS for Kafka, signed blobs, audit logs.
+
+Q: What monitoring / SLOs?
+A: Track Kafka lag, number of pending workitems, processing time per invoice, PDF generation time, CPU/memory for processors, Spark job durations. Set alerts for consumer lag > X or average invoice latency > SLA.
+
+Q: How to handle partial failures when generating PDFs?
+A: Keep intermediate artifacts and retry with backoff; push failures to a DLQ; support manual replay and incremental pdf generation.
+
+Q: Cost considerations for Spark or blob staging?
+A: Use ephemeral clusters (Databricks/Azure Synapse) that spin up for large jobs; store compressed parquet for cheaper storage.
+
+Summary & recommended design choices for your resume/interview
+
+Checkpoint locking: implement atomic UPDATE ... WHERE status='PENDING' + lockedBy + lockExpiry (show SQL) — mention lease renewal and reclamation.
+
+Priority: add priority column, ordered selection or dedicated high-priority worker pool and preemption mechanism.
+
+Large invoices: route to Spark pipeline — blob staging, partition into chunks, distributed aggregation, merge, and finalize; avoid putting millions of messages into a single Kafka partition.
+
+Kafka scaling: add partitions, use batching, autoscale consumers, and prefer blob pointer messages for extremely large payloads.
+
+Partitioning: default key=invoiceId for ordering; for scale use invoiceId:shard with aggregator or blob staging to avoid hotspots.
+
+Reliability: idempotent DB writes (ON DUPLICATE KEY), outbox pattern, job checkpoints, DLQ for failed events.
+
+Operational: metrics (lag, queue depth), alerts, chaos testing.
+
+If you want, I can:
+
+Turn this into a one-page diagram + short bullet notes for your resume/interview (I can produce a diagram outline or ASCII flow), or
+
+Produce a short Q&A sheet with the top 10 followup questions and concise model answers you can memorize.
+
+Which of those would you like me to generate next?
