@@ -1,5 +1,133 @@
 Round 3: Values: (Collaborative & Influential, complex situation or examples, conflict handling & decision making)
 
+
+
+Google Staff Engineer (L6) Behavioral Interview Improvement Guide
+Purpose: Convert strong Senior Engineer stories into Staff-level narratives emphasizing technical judgment, influence, tradeoffs, and organizational impact.
+
+1. First Impression Was Incorrect
+Current story: Swiggy Paas API migration looked simple.
+
+Improve:
+• Start with the business context rather than the technical task.
+• Explain that initial assumptions underestimated service coupling.
+• Describe how dependency mapping changed the execution strategy.
+• Emphasize that you paused implementation to redesign the migration plan.
+• End with organizational impact and learning.
+
+Key takeaway:
+'I now invest more time understanding dependencies before committing to estimates because architectural coupling is often hidden.'
+2. Different Technical Opinion
+Instead of saying 'I preferred Elasticsearch', explain the decision process.
+
+Structure:
+• Problem: Database search was becoming a scalability bottleneck.
+• Options evaluated:
+  - Optimize SQL
+  - Solr
+  - Elasticsearch
+• Collected production metrics and prototype benchmarks.
+• Used data instead of opinions to align stakeholders.
+
+Key sentence:
+'Rather than trying to win the argument, I tried to make the decision objective through measurable evidence.'
+3. Constructive Feedback
+Avoid examples around coding style.
+
+Use a leadership example:
+• Junior engineers repeatedly implemented retries without idempotency.
+• Conducted architecture sessions instead of fixing every PR.
+• Documented retry, circuit breaker and idempotency patterns.
+• Reduced recurring review comments across the team.
+
+Key takeaway:
+'Good feedback teaches principles rather than correcting individual mistakes.'
+4. Communicating Delays
+Emphasize proactive communication.
+
+Explain:
+• Raised delivery risk as soon as it became visible.
+• Presented multiple options with tradeoffs.
+• Recommended delaying delivery to automate infrastructure instead of shipping operational debt.
+
+Key takeaway:
+'Staff engineers communicate risks early and provide decision options, not surprises.'
+5. Receiving Critical Feedback
+Choose a growth story instead of a naming-convention example.
+
+Explain:
+• Early feedback highlighted maintainability rather than correctness.
+• Improved modularity, extensibility and code organization.
+• Later became an architectural reviewer.
+
+Learning:
+'Maintainability is as important as correctness.'
+6. Biggest Mistake
+Expand beyond rollback.
+
+Include:
+• Immediate rollback
+• Stakeholder communication
+• Blast radius analysis
+• Root cause analysis
+• Regression tests
+• Process improvements
+
+Learning:
+'Operational discipline applies even to seemingly small configuration changes.'
+7. Competing Priorities
+Frame the discussion as balancing business and engineering.
+
+Example:
+• Product wanted fast delivery.
+• Engineering prioritized reliability.
+• Finance cared about seasonal readiness.
+• Used staged rollout and feature flags to satisfy both speed and safety.
+8. Passion Project
+Focus on organizational impact.
+
+Instead of:
+'I like Elasticsearch.'
+
+Say:
+'I enjoy building infrastructure that enables multiple teams to move faster. The search platform became reusable across several internal services.'
+9. Building Something from Scratch
+Highlight architectural principles.
+
+Instead of implementation details:
+• Explain why configuration-driven design was chosen.
+• Discuss extensibility for future providers.
+• Show reduction in future onboarding effort.
+
+Key takeaway:
+'Design for future change rather than today's requirements.'
+Questions Google May Ask
+Prepare every story to answer:
+1. Why was this worth solving?
+2. What alternatives did you evaluate?
+3. What metrics influenced your decision?
+4. Who disagreed and why?
+5. How did you build alignment?
+6. What risks did you identify?
+7. How did you de-risk rollout?
+8. How did you measure success?
+9. What would you improve today?
+10. How did this change the organizaation?
+Universal Staff Engineer Story Template
+1. Business Context
+2. Technical Challenge
+3. Alternatives & Tradeoffs
+4. Decision & Supporting Data
+5. Cross-team Influence
+6. Risk Mitigation & Rollout
+7. Quantified Business Impact
+8. Reflection & Organizational Learning
+
+Remember:
+A Senior Engineer delivers projects.
+A Staff Engineer changes how the organization builds software.
+
+
 Open Company, No Bullshit:
 1)Tell me about a time your first impression of a person or situation was incorrect
     * How did you arrive at your initial impression?
