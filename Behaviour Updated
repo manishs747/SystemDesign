@@ -1,0 +1,637 @@
+# Google Staff Engineer (L6) Behavioral Interview Guide
+
+## Mindset Shift: Senior Engineer (L5) → Staff Engineer (L6)
+
+The biggest difference is not technical depth—it's organizational impact.
+
+### L5 Answer
+
+> I designed and implemented a scalable payment service.
+
+### L6 Answer
+
+> I recognized that the payment architecture had become an organizational bottleneck, evaluated multiple architectural alternatives, aligned Product, SRE, and platform teams on a migration strategy, executed a phased rollout with measurable risk controls, and established a migration playbook later reused by other teams.
+
+A Staff Engineer is evaluated on:
+
+* Technical judgment
+* Influence without authority
+* Cross-team collaboration
+* Tradeoff analysis
+* Long-term thinking
+* Organizational impact
+* Risk management
+
+Never stop your story after saying "I implemented it."
+
+Always end with:
+
+> "How did this change the organization?"
+
+---
+
+# Question 1
+
+## Walk me through a project you planned and executed end-to-end.
+
+### What Google Wants
+
+They are NOT asking:
+
+"Can you manage Jira?"
+
+They want to understand:
+
+* How did you identify the problem?
+* Why was this worth solving?
+* How did you influence multiple teams?
+* How did you de-risk the project?
+* How did you measure success?
+
+---
+
+## Better Story Structure
+
+### Situation
+
+Start with the business problem.
+
+Instead of saying:
+
+> Payment service was tightly coupled.
+
+Say:
+
+> During peak traffic events, payment processing competed with checkout for compute resources. Any degradation in payments directly impacted checkout conversion and revenue. The architecture itself had become a scaling bottleneck rather than simply a code-quality issue.
+
+Always connect:
+
+Architecture
+↓
+
+Customer
+↓
+
+Business
+
+---
+
+### Task
+
+Instead of:
+
+"I had to migrate payment service."
+
+Say:
+
+My responsibility was to:
+
+* identify architectural boundaries
+* design an independently scalable payment platform
+* migrate production traffic safely
+* avoid customer-visible regressions
+* provide rollback capability
+
+---
+
+### Action
+
+Instead of saying:
+
+"I implemented APIs."
+
+Explain your thinking.
+
+Example:
+
+Before writing any code, I mapped every downstream dependency including fraud detection, reconciliation, refunds, analytics, and third-party gateways. That dependency map became the foundation for our migration plan because it showed where independent rollout was possible and where compatibility layers were required.
+
+---
+
+### Risk Management
+
+Don't list risks.
+
+Explain WHY they mattered.
+
+Example:
+
+The biggest technical risk wasn't moving code. It was proving that we could migrate without affecting payment success rates. That shifted our rollout strategy from a big-bang deployment to staged traffic migration behind feature flags.
+
+---
+
+### Measuring Success
+
+Mention metrics.
+
+Examples:
+
+* Payment Success Rate
+* P95 Latency
+* Checkout Conversion
+* Error Rate
+* Rollback Frequency
+* CPU
+* Memory
+* DB Connections
+
+Google loves measurable outcomes.
+
+---
+
+### Result
+
+Don't stop at:
+
+> Migration completed.
+
+Instead say:
+
+The larger impact wasn't simply the migration. The architecture enabled independent deployment, independent scaling, and became the template used for future service extractions across the organization.
+
+That is Staff-level impact.
+
+---
+
+## Possible Google Follow-up
+
+### Why didn't you simply scale Checkout?
+
+Good Answer
+
+Scaling Checkout vertically would temporarily increase capacity but would not remove coupling between payment processing and order placement. We optimized for architectural isolation rather than simply adding more compute.
+
+---
+
+# Question 2
+
+## Tell me about an important design decision.
+
+Google wants:
+
+* Technical judgment
+* Tradeoffs
+* Decision making
+* Influence
+
+---
+
+## Never Present Only One Option
+
+Instead say:
+
+We evaluated three alternatives.
+
+### Option 1
+
+Optimize existing SQL.
+
+Rejected because:
+
+* transactional DB remained bottleneck
+* limited scalability
+* no autocomplete support
+
+---
+
+### Option 2
+
+Solr
+
+Advantages
+
+* Mature
+
+Disadvantages
+
+* Operational complexity
+* Smaller internal expertise
+
+---
+
+### Option 3
+
+Elasticsearch
+
+Chosen because:
+
+* Horizontal scalability
+* Better operational tooling
+* Rich search DSL
+* Existing organizational expertise
+
+---
+
+## Mention Data
+
+Google loves evidence.
+
+Example:
+
+Initially I expected SQL optimization to solve the problem. After benchmarking realistic production workloads, it became clear that query tuning reduced latency only marginally while database contention remained the primary bottleneck.
+
+That evidence justified introducing Elasticsearch.
+
+---
+
+## Conflict
+
+Don't say
+
+"They disagreed."
+
+Instead say
+
+One senior engineer argued that introducing another distributed system increased operational complexity more than the latency improvement justified.
+
+Rather than debating opinions, I collected production metrics, built a prototype, and compared operational cost against latency improvement.
+
+The discussion shifted from opinions to measurable tradeoffs.
+
+---
+
+## Communication
+
+Mention
+
+* RFC
+* Design Review
+* Architecture Diagram
+* Async Feedback
+* Brown Bag Session
+* Rollout Dashboard
+
+---
+
+## Long-term Thinking
+
+Always answer:
+
+How did this help future teams?
+
+Example
+
+The provider abstraction later allowed additional search providers to be integrated without changing application code.
+
+---
+
+# Question 3
+
+## How do you mentor engineers?
+
+Weak Answer
+
+"I review PRs."
+
+---
+
+Better Answer
+
+I try to eliminate repeated mistakes rather than fixing the same issue during every code review.
+
+For example, after repeatedly seeing distributed systems issues around retries, idempotency, and circuit breakers, I documented common reliability patterns, created reusable examples, and ran architecture sessions using real production incidents.
+
+My goal wasn't to answer every technical question.
+
+It was to reduce the number of questions engineers needed to ask.
+
+---
+
+## Delegation
+
+Don't assign work randomly.
+
+Instead:
+
+Junior engineers
+
+↓
+
+Low-risk independent modules
+
+Senior engineers
+
+↓
+
+Critical architecture
+
+Then gradually increase ownership.
+
+---
+
+## Feedback
+
+Always explain WHY.
+
+Example
+
+Instead of saying:
+
+"This retry logic is wrong."
+
+Say
+
+"This retry logic may create duplicate payment requests because the operation is not idempotent."
+
+Teach principles.
+
+---
+
+# Question 4
+
+## Tell me about changing engineering culture.
+
+Weak Story
+
+"We introduced feature flags."
+
+Better Story
+
+Before the project
+
+Deployment
+
+↓
+
+Production
+
+↓
+
+Hope
+
+After the project
+
+Feature Flag
+
+↓
+
+Canary
+
+↓
+
+Metrics
+
+↓
+
+Rollback
+
+↓
+
+Production
+
+Explain
+
+The biggest change wasn't introducing feature flags.
+
+It was changing how teams thought about production deployments.
+
+Gradual rollout, observability, rollback criteria, and deployment dashboards eventually became the standard rollout model across multiple services.
+
+---
+
+# Microsoft Postbill Story (Primary Google Story)
+
+This is the strongest Staff story.
+
+It demonstrates
+
+* Event-driven architecture
+* Kafka
+* State machines
+* Distributed systems
+* Sharding
+* Spark
+* Scaling
+* Retry handling
+* Leadership
+* Cross-team influence
+
+Use it whenever possible.
+
+---
+
+# Google Counter Questions
+
+## Why Kafka instead of direct APIs?
+
+Good Answer
+
+Kafka decoupled upstream billing generation from invoice processing.
+
+Producer throughput became independent from downstream processing speed.
+
+Each stage could scale independently.
+
+---
+
+## Why WorkItem Table instead of Kafka?
+
+Excellent Answer
+
+Kafka is optimized for immutable ordered streams.
+
+A WorkItem represents mutable state.
+
+It requires
+
+* retries
+* locking
+* lease ownership
+* priorities
+* manual replay
+* status transitions
+
+Those semantics are much easier with a relational database.
+
+---
+
+## Why MySQL instead of Cassandra?
+
+Good Answer
+
+Invoice processing requires transactional state transitions and worker coordination.
+
+Cassandra scales writes better but complicates transactional workflows and task ownership.
+
+The workload favored relational consistency over write scalability.
+
+---
+
+## Why Spark?
+
+Good Answer
+
+Regular processors scale horizontally but remain single-node compute.
+
+Invoices containing millions of line items require distributed aggregation.
+
+Spark allows partitioning, distributed aggregation, checkpointing, and fault recovery.
+
+---
+
+## Why a State Machine?
+
+Good Answer
+
+Failures can occur after any stage.
+
+Instead of restarting invoice generation, each state is persisted.
+
+The workflow resumes from the last successful state.
+
+Example
+
+INGESTED
+
+↓
+
+VALIDATED
+
+↓
+
+ENRICHED
+
+↓
+
+PDF_GENERATED
+
+↓
+
+UPLOADED
+
+↓
+
+COMPLETED
+
+---
+
+## How do you prevent duplicate invoice processing?
+
+Answer
+
+Use:
+
+* Atomic WorkItem locking
+* Lease expiry
+* Version numbers
+* Idempotent operations
+* Unique invoiceId + lineItemId constraint
+
+Workers can safely retry without duplicate invoices.
+
+---
+
+## How do you handle worker crashes?
+
+Persist state after every state transition.
+
+If a worker crashes:
+
+* lease expires
+* another worker acquires the task
+* resumes from the last committed state
+
+---
+
+## How do you scale Kafka?
+
+Small invoices
+
+Kafka Key
+
+invoiceId
+
+↓
+
+Same partition
+
+↓
+
+Ordering guaranteed
+
+Large invoices
+
+invoiceId:shard
+
+↓
+
+Multiple partitions
+
+↓
+
+Parallel processing
+
+↓
+
+Aggregation
+
+Alternatively
+
+Store line items in Parquet on Blob Storage
+
+↓
+
+Kafka contains only metadata
+
+↓
+
+Spark processes the data
+
+---
+
+# What Google L6 Expects From Every Story
+
+For every project be ready to answer:
+
+1. Why was this worth solving?
+2. What alternatives did you evaluate?
+3. What data influenced your decision?
+4. Who disagreed and why?
+5. How did you build alignment?
+6. What risks did you identify?
+7. How did you de-risk rollout?
+8. How did you measure success?
+9. What would you improve today?
+10. How did this change the organization?
+
+If every answer naturally covers these points, you'll consistently demonstrate Staff-level thinking rather than simply implementation skills.
+
+---
+
+# Staff Engineer Mental Model
+
+Every answer should follow this flow:
+
+Business Problem
+↓
+
+Customer Impact
+↓
+
+Technical Problem
+↓
+
+Alternatives Considered
+↓
+
+Tradeoffs
+↓
+
+Decision
+↓
+
+Cross-Team Influence
+↓
+
+Incremental Rollout
+↓
+
+Metrics
+↓
+
+Organizational Impact
+↓
+
+Lessons Learned
+
+This structure consistently demonstrates the qualities Google looks for in an L6 Staff Engineer: technical excellence combined with influence, judgment, and long-term organizational thinking.
